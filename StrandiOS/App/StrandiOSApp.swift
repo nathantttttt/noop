@@ -52,6 +52,19 @@ struct StrandiOSApp: App {
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
 
     init() {
+        // Nathan's defaults. Registered (not written), so they apply only where nothing was chosen in
+        // Settings yet, and every one of them can still be changed there. Registered values are what
+        // @AppStorage falls back to, ahead of each declaration's own inline default.
+        UserDefaults.standard.register(defaults: [
+            "noop.showDayCycleBackground": false,   // no sky scene behind screens
+            "noop.skyBehindCards": false,
+            "noop.liquidTodayEnabled": false,       // the plain card Today, not the "liquid" one
+            "noop.coachEnabled": false,             // AI Coach off until a key is added
+            "noop.liveSessionsBeta": false,         // removes the big "Start session" bar on Today
+            "units.system": "imperial",             // lb, ft/in, °F
+            "effort.scale": "whoop",                // strain on the 0–21 scale
+            "theme.appearance": "dark",
+        ])
         // #1008: pin the pre-change Overnight-only default for existing installs before
         // anything reads it. Idempotent; a no-op on fresh installs and after the first launch.
         PuffinExperiment.migrateContinuousHrvOvernightDefault()

@@ -1,0 +1,84 @@
+# Nathan's personal build: every push to the `nathan` branch compiles the iPhone app and, when it
+# builds, publishes the sideload-ready .ipa to the rolling `nathan-latest` release.
+#
+# Install: on the iPhone open github.com/nathantttttt/noop/releases/tag/nathan-latest in Safari,
+# download NOOP-Nathan.ipa, then SideStore -> My Apps -> + -> pick the file.
+#
+# The .ipa keeps NOOP's production bundle id, so it REPLACES the installed NOOP and keeps its data.
+name: Nathan iPhone build
+
+on:
+  push:
+    branches: [nathan]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nathan-ios
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    # iOS 26 SDK (Liquid Glass APIs) needs Xcode 26, which only the macos-26 image carries.
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build NOOPiOS (unsigned, Release)
+        run: |
+          set +e
+          xcodebuild -scheme NOOPiOS -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            build > build.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            # Surface compiler errors as annotations so they are readable from the run page (and the
+            # public checks API) without downloading the full log.
+            grep -E '^/.+:[0-9]+:[0-9]+: error: ' build.log | sort -u | head -40 | while IFS= read -r line; do
+              file=$(printf '%s' "$line" | cut -d: -f1 | sed "s#^$GITHUB_WORKSPACE/##")
+              lineno=$(printf '%s' "$line" | cut -d: -f2)
+              msg=$(printf '%s' "$line" | cut -d: -f5- | sed 's/^ error: //')
+              echo "::error file=${file},line=${lineno}::${msg}"
+            done
+            echo '### Build failed' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E 'error:' build.log | sort -u | head -60 >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -60 build.log
+            exit "$status"
+          fi
+          tail -5 build.log
+
+      - name: Package sideload .ipa
+        run: |
+          APP=$(find build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -type d | head -1)
+          test -n "$APP" || { echo ".app (iphoneos) not found"; exit 1; }
+          rm -rf "$APP/Watch"
+          Tools/prepare-ios-sideload-app.sh "$APP"
+          rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
+          zip -qr NOOP-Nathan.ipa Payload
+
+      - name: Publish to the nathan-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=nathan-latest
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
+          sleep 3
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Nathan build #${{ github.run_number }} · ${GITHUB_SHA:0:7}" \
+            --notes "Built from the nathan branch at ${GITHUB_SHA:0:7}. Download NOOP-Nathan.ipa on your iPhone, then SideStore → My Apps → + → pick the file. Replaces the installed NOOP and keeps your data — export a backup in NOOP first." \
+            NOOP-Nathan.ipa
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease

@@ -340,7 +340,7 @@ public enum StrandPalette {
     /// Deep blue — accent low stop (was bronze).
     public static let goldDeep      = Color(light: "#2A5C9E", dark: "#3A78C8")
     /// Near-black brown — text / icons placed ON gold surfaces (scheme-invariant; gold fills stay gold).
-    public static let goldDeepText  = Color(hex: "#FFFFFF") // white text/icons on accent fills (WHOOP, gold killed)
+    public static let goldDeepText  = Color(light: "#FFFFFF", dark: "#0D0E10") // white text/icons on accent fills (WHOOP, gold killed)
     /// The bright core dot at a gauge arc tip / sparkline head. White reads as a highlight on the dark
     /// canvas; on light it would vanish into the white card, so it flips to a deep ink that reads as a
     /// crisp centre on the (deepened) coloured tip bead.
