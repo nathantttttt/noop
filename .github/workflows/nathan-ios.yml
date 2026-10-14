@@ -39,7 +39,7 @@ jobs:
           xcodebuild -scheme NOOPiOS -configuration Release -destination 'generic/platform=iOS' \
             -derivedDataPath build/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="$((10000 + ${{ github.run_number }}))" \
             build > build.log 2>&1
           status=$?
           set -e
@@ -69,6 +69,52 @@ jobs:
           Tools/prepare-ios-sideload-app.sh "$APP"
           rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
           zip -qr NOOP-Nathan.ipa Payload
+          # Fail loudly if the build number did not take: an installed official NOOP carries a build in
+          # the hundreds, and a LOWER number reads to SideStore as a downgrade (it stalled on build #1).
+          BUILT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist")
+          WANT=$((10000 + ${{ github.run_number }}))
+          [ "$BUILT" = "$WANT" ] || { echo "::error::CFBundleVersion is $BUILT, expected $WANT"; exit 1; }
+          VER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
+          cp NOOP-Nathan.ipa "NOOP-Nathan-b${BUILT}.ipa"
+          echo "BUILT=$BUILT" >> "$GITHUB_ENV"
+          echo "VER=$VER" >> "$GITHUB_ENV"
+
+      - name: Write the SideStore source
+        # Nathan's own source, so SideStore sees each build as an UPDATE to the installed NOOP. Built
+        # from the upstream manifest (same bundle id, permissions and icon) with this build's version,
+        # build number and download link swapped in.
+        run: |
+          python3 - <<'EOF'
+          import json, os, datetime
+          src = json.load(open("altstore-source.json"))
+          repo = os.environ["GITHUB_REPOSITORY"]
+          base = f"https://github.com/{repo}/releases/download/nathan-latest"
+          ver, built = os.environ["VER"], os.environ["BUILT"]
+          ipa = f"NOOP-Nathan-b{built}.ipa"
+          today = datetime.date.today().isoformat()
+          app = src["apps"][0]
+          entry = {
+              "version": ver, "buildVersion": built, "date": today,
+              "localizedDescription": f"Nathan build {built} from the nathan branch.",
+              "downloadURL": f"{base}/{ipa}", "size": os.path.getsize(ipa),
+              "minOSVersion": app.get("minOSVersion", "17.0"),
+          }
+          app.update({
+              "name": "NOOP (Nathan)", "version": ver, "buildVersion": built, "versionDate": today,
+              "versionDescription": entry["localizedDescription"], "downloadURL": entry["downloadURL"],
+              "size": entry["size"], "versions": [entry],
+          })
+          out = {
+              "name": "NOOP (Nathan)", "identifier": "com.nathantttttt.noop.source",
+              "sourceURL": f"{base}/nathan-source.json",
+              "subtitle": "Nathan's custom NOOP builds",
+              "description": "Personal builds of NOOP from github.com/" + repo + " (nathan branch).",
+              "iconURL": src.get("iconURL", ""), "tintColor": "C8F03C",
+              "apps": [app], "news": [],
+          }
+          json.dump(out, open("nathan-source.json", "w"), indent=2)
+          EOF
+          python3 -m json.tool nathan-source.json > /dev/null
 
       - name: Publish to the nathan-latest release
         env:
@@ -78,7 +124,7 @@ jobs:
           gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
           sleep 3
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
-            --title "Nathan build #${{ github.run_number }} · ${GITHUB_SHA:0:7}" \
-            --notes "Built from the nathan branch at ${GITHUB_SHA:0:7}. Download NOOP-Nathan.ipa on your iPhone, then SideStore → My Apps → + → pick the file. Replaces the installed NOOP and keeps your data — export a backup in NOOP first." \
-            NOOP-Nathan.ipa
+            --title "Nathan build ${BUILT} · ${GITHUB_SHA:0:7}" \
+            --notes "Built from the nathan branch at ${GITHUB_SHA:0:7} (version ${VER}, build ${BUILT}). Easiest: add this release's nathan-source.json as a SideStore source and tap Update. Or download NOOP-Nathan.ipa and SideStore → My Apps → + → pick the file. Replaces the installed NOOP and keeps your data — export a backup in NOOP first." \
+            NOOP-Nathan.ipa "NOOP-Nathan-b${BUILT}.ipa" nathan-source.json
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
