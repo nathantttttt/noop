@@ -126,15 +126,18 @@ struct RootTabView: View {
         // its dynamic interaction with scrolling content automatically; older supported releases use
         // the corresponding system material and safe-area behaviour from the same TabView.
         TabView(selection: nativeTabSelection) {
-            // Nathan's layout: Today · Sleep · Lift · Trends · More. Coach lives in More (when enabled).
-            // Tags stay fixed so `tabPaths` / `scrollTop` keep one slot per tab.
-            tab(todayTabRoot, "Today", "circle.circle", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
-            tab(SleepView(), "Sleep", "moon.zzz", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
+            // Nathan's layout: Today · Sleep · Lift · Body · More. Trends, the stock Today and Coach live in
+            // More. Tags stay fixed so `tabPaths` / `scrollTop` keep one slot per tab.
+            tab(NathanTodayView(), "Today", "circle.circle", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
+            tab(NathanSleepView(), "Sleep", "moon.zzz", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
             tab(LiftLogView(), "Lift", "dumbbell", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
+            tab(NathanBodyView(), "Body", "figure.arms.open", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
         .tint(StrandPalette.accent)
+        .environment(\.nathanSelectTab, { tag in
+            withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = tag }
+        })
         // #1841: the same "Hide bar when scrolling" preference Android drives its own bar with. Here the
         // system owns the behaviour — iOS 26's tab bar MINIMISES to a pill on scroll down rather than
         // sliding away entirely, so this is the platform's read of the same intent, not a copy of ours.
@@ -215,8 +218,8 @@ struct RootTabView: View {
                 withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 4 }
                 router.requestedDestination = nil
             case .trends:
-                // Trends is a primary tab on iPhone (not a pillar sheet) — switch to it.
-                withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 3 }
+                // Nathan's layout keeps Trends in More, so open More.
+                withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 4 }
                 router.requestedDestination = nil
             case .activeWorkout:
                 // The Today active-workout indicator opens Live through the quick-action Live sheet; once
@@ -452,6 +455,11 @@ struct RootTabView: View {
             ScreenScaffold(title: "More", subtitle: "Everything else, one tap away",
                            onRefresh: { await repo.refresh() },
                            topBackground: liquidScaffoldSky()) {
+                moreSection("Classic screens") {
+                    MoreRow("Trends", "chart.line.uptrend.xyaxis", .trends)
+                    MoreRow("Classic Today", "square.grid.2x2", .classicToday)
+                    MoreRow("Sleep details", "bed.double", .classicSleep)
+                }
                 moreSection("Insights") {
                     MoreRow("What Moves You", "wand.and.sparkles", .insightsHub)
                     MoreRow("Intelligence", "brain.head.profile", .intelligence)
@@ -589,6 +597,7 @@ struct RootTabView: View {
 /// per-screen chrome the old inline links applied lives at the single `navigationDestination(for:)`
 /// registration in `moreTab`.
 private enum MoreDestination: Hashable {
+    case trends, classicToday, classicSleep
     case insightsHub, intelligence, coach, insights, explore, compare
     case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
@@ -596,6 +605,9 @@ private enum MoreDestination: Hashable {
 
     @ViewBuilder var destination: some View {
         switch self {
+        case .trends:          TrendsView()
+        case .classicToday:    TodayView()
+        case .classicSleep:    SleepView()
         case .insightsHub:     InsightsHubView()
         case .intelligence:    IntelligenceView()
         case .coach:           CoachView()
