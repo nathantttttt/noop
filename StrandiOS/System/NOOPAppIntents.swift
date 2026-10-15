@@ -137,8 +137,10 @@ struct SendHealthDataIntent: AppIntent {
     @Parameter(title: "Weight") var weight: String?
     @Parameter(title: "Body fat") var bodyFat: String?
     @Parameter(title: "Lean mass") var leanMass: String?
-    @Parameter(title: "Sleep start") var sleepStart: Date?
-    @Parameter(title: "Sleep end") var sleepEnd: Date?
+    /// Lists, so ONE "Find Health Samples: Sleep" step can feed both: its Start Dates here, its End Dates
+    /// below. A sleep mat writes a night as many stage samples; `sleepWindow` stitches them back together.
+    @Parameter(title: "Sleep start") var sleepStart: [Date]?
+    @Parameter(title: "Sleep end") var sleepEnd: [Date]?
 
     static var parameterSummary: some ParameterSummary {
         Summary("Send \(\.$weight), \(\.$bodyFat), \(\.$leanMass), sleep \(\.$sleepStart) to \(\.$sleepEnd) to NOOP")
@@ -156,23 +158,53 @@ struct SendHealthDataIntent: AppIntent {
         return imperial ? v / 2.2046226218 : v
     }
 
+    /// The main sleep block from a mat's stage samples: pair starts with ends, merge samples less than 90
+    /// minutes apart, keep the longest block (so a nap or a stray sample does not stretch the night).
+    static func sleepWindow(starts: [Date], ends: [Date]) -> (start: Date, end: Date)? {
+        guard !starts.isEmpty, !ends.isEmpty else { return nil }
+        var spans: [(Date, Date)]
+        if starts.count == ends.count {
+            spans = zip(starts, ends).filter { $0.1 > $0.0 }.map { ($0.0, $0.1) }
+        } else if let s = starts.min(), let e = ends.max(), e > s {
+            spans = [(s, e)]
+        } else { return nil }
+        spans.sort { $0.0 < $1.0 }
+        var blocks: [(Date, Date)] = []
+        for sp in spans {
+            if let last = blocks.last, sp.0.timeIntervalSince(last.1) <= 90 * 60 {
+                blocks[blocks.count - 1].1 = max(last.1, sp.1)
+            } else {
+                blocks.append(sp)
+            }
+        }
+        guard let best = blocks.max(by: { $0.1.timeIntervalSince($0.0) < $1.1.timeIntervalSince($1.0) }),
+              best.1.timeIntervalSince(best.0) >= 30 * 60, best.1.timeIntervalSince(best.0) < 20 * 3600 else { return nil }
+        return (start: best.0, end: best.1)
+    }
+
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        var day = ShortcutHealthImport.ParsedDay(day: Repository.localDayKey(sleepEnd ?? Date()))
+        let window = Self.sleepWindow(starts: sleepStart ?? [], ends: sleepEnd ?? [])
+        var day = ShortcutHealthImport.ParsedDay(day: Repository.localDayKey(window?.end ?? Date()))
         day.weightKg = Self.kilograms(weight)
         if let s = bodyFat?.trimmingCharacters(in: .whitespacesAndNewlines), let v = ShortcutHealthImport.leadingNumber(s) {
             let pct = v <= 1 ? v * 100 : v
             if pct > 1, pct < 70 { day.bodyFatPct = pct }
         }
         day.leanKg = Self.kilograms(leanMass)
-        var sleepNote = "no sleep"
-        if let s = sleepStart, let e = sleepEnd, e > s, e.timeIntervalSince(s) < 20 * 3600 {
-            day.sleepStartTs = Int(s.timeIntervalSince1970)
-            day.sleepEndTs = Int(e.timeIntervalSince1970)
+        let nStarts = sleepStart?.count ?? 0, nEnds = sleepEnd?.count ?? 0
+        var sleepNote = "no sleep (both sleep fields were empty)"
+        if let w = window {
+            day.sleepStartTs = Int(w.start.timeIntervalSince1970)
+            day.sleepEndTs = Int(w.end.timeIntervalSince1970)
             let f = DateFormatter(); f.dateFormat = "h:mm a"
-            sleepNote = "sleep \(f.string(from: s))–\(f.string(from: e))"
-        } else if sleepStart != nil || sleepEnd != nil {
-            sleepNote = "sleep skipped (needs both a start and an end)"
+            sleepNote = "sleep \(f.string(from: w.start))–\(f.string(from: w.end))"
+        } else if nStarts == 0 && nEnds > 0 {
+            sleepNote = "sleep skipped: Sleep start was empty"
+        } else if nEnds == 0 && nStarts > 0 {
+            sleepNote = "sleep skipped: Sleep end was empty"
+        } else if nStarts > 0 {
+            sleepNote = "sleep skipped: got \(nStarts) start and \(nEnds) end times but no night-length block"
         }
         guard day.hasAnyMetric else {
             return .result(dialog: "Nothing to send: every field was empty. Check that Health has a weight or sleep reading in the range your Find steps use.")
