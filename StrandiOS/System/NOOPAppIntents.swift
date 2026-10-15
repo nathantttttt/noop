@@ -137,10 +137,11 @@ struct SendHealthDataIntent: AppIntent {
     @Parameter(title: "Weight") var weight: String?
     @Parameter(title: "Body fat") var bodyFat: String?
     @Parameter(title: "Lean mass") var leanMass: String?
-    /// Lists, so ONE "Find Health Samples: Sleep" step can feed both: its Start Dates here, its End Dates
-    /// below. A sleep mat writes a night as many stage samples; `sleepWindow` stitches them back together.
-    @Parameter(title: "Sleep start") var sleepStart: [Date]?
-    @Parameter(title: "Sleep end") var sleepEnd: [Date]?
+    /// ONE "Find Health Samples: Sleep" step feeds both: its Start Dates here, its End Dates below. A sleep
+    /// mat writes a night as many stage samples; `sleepWindow` stitches them back together. Text, not Date: a list of dates handed to a Date-list parameter arrived empty on device, while the
+    /// same list as text ("Oct 14, 2026 at 12:09 AM", one per line) comes through intact.
+    @Parameter(title: "Sleep start") var sleepStart: String?
+    @Parameter(title: "Sleep end") var sleepEnd: String?
 
     static var parameterSummary: some ParameterSummary {
         Summary("Send \(\.$weight), \(\.$bodyFat), \(\.$leanMass), sleep \(\.$sleepStart) to \(\.$sleepEnd) to NOOP")
@@ -156,6 +157,31 @@ struct SendHealthDataIntent: AppIntent {
         if lower.contains("lb") || lower.contains("pound") { return v / 2.2046226218 }
         let imperial = (UserDefaults.standard.string(forKey: UnitPrefs.systemKey) ?? "imperial") == UnitSystem.imperial.rawValue
         return imperial ? v / 2.2046226218 : v
+    }
+
+    /// Every date in a Shortcuts text value: one per line, in whatever format Shortcuts printed it.
+    static func dates(_ raw: String?) -> [Date] {
+        guard let raw else { return [] }
+        let cleaned = raw.replacingOccurrences(of: "\u{202F}", with: " ").replacingOccurrences(of: "\u{00A0}", with: " ")
+        let posix = DateFormatter()
+        posix.locale = Locale(identifier: "en_US_POSIX")
+        let patterns = ["MMM d, yyyy 'at' h:mm a", "MMM d, yyyy 'at' h:mm:ss a", "MMMM d, yyyy 'at' h:mm a",
+                        "MMM d, yyyy, h:mm a", "M/d/yy, h:mm a", "M/d/yyyy, h:mm a", "M/d/yy h:mm a",
+                        "MMM d, yyyy 'at' HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm"]
+        let local = DateFormatter()
+        local.dateStyle = .medium; local.timeStyle = .short
+        let iso = ISO8601DateFormatter()
+        return cleaned.split(whereSeparator: \.isNewline).compactMap { line -> Date? in
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard !t.isEmpty else { return nil }
+            if let d = iso.date(from: t) { return d }
+            if let d = local.date(from: t) { return d }
+            for p in patterns {
+                posix.dateFormat = p
+                if let d = posix.date(from: t) { return d }
+            }
+            return nil
+        }
     }
 
     /// The main sleep block from a mat's stage samples: pair starts with ends, merge samples less than 90
@@ -184,7 +210,8 @@ struct SendHealthDataIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let window = Self.sleepWindow(starts: sleepStart ?? [], ends: sleepEnd ?? [])
+        let starts = Self.dates(sleepStart), ends = Self.dates(sleepEnd)
+        let window = Self.sleepWindow(starts: starts, ends: ends)
         var day = ShortcutHealthImport.ParsedDay(day: Repository.localDayKey(window?.end ?? Date()))
         day.weightKg = Self.kilograms(weight)
         if let s = bodyFat?.trimmingCharacters(in: .whitespacesAndNewlines), let v = ShortcutHealthImport.leadingNumber(s) {
@@ -192,7 +219,7 @@ struct SendHealthDataIntent: AppIntent {
             if pct > 1, pct < 70 { day.bodyFatPct = pct }
         }
         day.leanKg = Self.kilograms(leanMass)
-        let nStarts = sleepStart?.count ?? 0, nEnds = sleepEnd?.count ?? 0
+        let nStarts = starts.count, nEnds = ends.count
         var sleepNote = "no sleep (both sleep fields were empty)"
         if let w = window {
             day.sleepStartTs = Int(w.start.timeIntervalSince1970)
@@ -205,6 +232,8 @@ struct SendHealthDataIntent: AppIntent {
             sleepNote = "sleep skipped: Sleep end was empty"
         } else if nStarts > 0 {
             sleepNote = "sleep skipped: got \(nStarts) start and \(nEnds) end times but no night-length block"
+        } else if !(sleepStart ?? "").isEmpty || !(sleepEnd ?? "").isEmpty {
+            sleepNote = "sleep skipped: couldn't read the times (\(String((sleepStart ?? sleepEnd ?? "").prefix(40))))"
         }
         guard day.hasAnyMetric else {
             return .result(dialog: "Nothing to send: every field was empty. Check that Health has a weight or sleep reading in the range your Find steps use.")
