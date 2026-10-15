@@ -46,6 +46,8 @@ struct RootTabView: View {
     /// Selected tab — bound so tab switches can crossfade (README §Motion: ~240ms opacity swap
     /// between tab roots, calm easing). Defaults to Today.
     @State private var selectedTab: Int = 0
+    /// Nathan's build: the per-day table behind every WHOOP-style screen, reloaded on each refresh.
+    @StateObject private var whoopData = WhoopData()
     /// One `NavigationPath` per tab, indexed by tab tag. Re-tapping the already-active tab pops
     /// that tab's stack to its root (#135) by clearing its path — an animated pop that leaves the
     /// root view alive, so an at-root re-tap keeps scroll position and never re-runs `.task`
@@ -128,13 +130,15 @@ struct RootTabView: View {
         TabView(selection: nativeTabSelection) {
             // Nathan's layout: Today · Sleep · Lift · Body · More. Trends, the stock Today and Coach live in
             // More. Tags stay fixed so `tabPaths` / `scrollTop` keep one slot per tab.
-            tab(NathanTodayView(), "Today", "circle.circle", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
-            tab(NathanSleepView(), "Sleep", "moon.zzz", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
-            tab(NathanWorkoutView(), "Workout", "dumbbell", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            tab(NathanBodyView(), "Body", "figure.arms.open", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
+            tab(WHomeView(), "Home", "house", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
+            tab(WHealthView(), "Health", "heart", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
+            tab(NathanWorkoutView().wRoutes(), "Workout", "dumbbell", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
+            tab(NathanBodyView().wRoutes(), "Body", "figure.arms.open", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
-        .tint(StrandPalette.accent)
+        .tint(.white)
+        .environmentObject(whoopData)
+        .task(id: repo.refreshSeq) { await whoopData.load(repo) }
         .environment(\.nathanSelectTab, { tag in
             withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = tag }
         })
@@ -536,7 +540,7 @@ struct RootTabView: View {
         }
         // Scroll the More index to the top on an at-root re-tap (#198 follow-up); read by its ScreenScaffold.
         .environment(\.scrollToTopSignal, scrollSignal)
-        .tabItem { Label("More", systemImage: "ellipsis") }
+        .tabItem { Label("More", systemImage: "line.3.horizontal") }
     }
 
     /// One titled, COLLAPSIBLE group in the More index (S2): the app's overline (UPPERCASE) becomes a

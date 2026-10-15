@@ -154,25 +154,28 @@ struct NathanSignalsCard: View {
         let core = f.filter(\.core).count
         if !f.isEmpty {
             let serious = core >= 2
-            NathanCard {
+            WCard(padding: 20) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        Image(systemName: serious ? "cross.case.fill" : "exclamationmark.circle.fill")
-                            .foregroundStyle(serious ? NathanStyle.bad : NathanStyle.warn)
-                        Text(serious ? "Your body may be fighting something" : "One signal is off today")
-                            .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                        Image(systemName: serious ? "cross.case" : "exclamationmark.circle")
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundStyle(serious ? W.red : W.orange)
+                        Text((serious ? "Health Monitor: signals are off" : "Health Monitor: one signal is off").uppercased())
+                            .font(W.caps(13)).tracking(1.3).foregroundStyle(W.text)
                     }
                     ForEach(f) { flag in
-                        Text("• \(flag.text)").font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                        Text("• \(flag.text)").font(W.body(15)).foregroundStyle(W.text2)
                     }
                     Text(serious
-                         ? "Take it easy today: skip hard training, keep any workout light, and prioritise sleep and fluids. If you feel unwell, rest."
+                         ? "Your body may be fighting something. Take it easy today: skip hard training, keep any workout light, and prioritize sleep and fluids."
                          : "Fine to train, but keep an eye on how you feel and don't chase a big day.")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(serious ? NathanStyle.bad : NathanStyle.text)
+                        .font(W.body(15, .semibold))
+                        .foregroundStyle(serious ? W.orange : W.text)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .overlay(RoundedRectangle(cornerRadius: W.cardRadius, style: .continuous)
+                .stroke(serious ? W.red.opacity(0.7) : W.orange.opacity(0.5), lineWidth: 1))
         }
     }
 }
