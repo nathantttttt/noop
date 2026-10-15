@@ -21,6 +21,7 @@ struct NathanTodayView: View {
     @State private var appleSteps: [String: Double] = [:]
     @State private var appleKcal: [String: Double] = [:]
     @State private var eaten: [String: Double] = [:]
+    @State private var showJournal = false
 
     private var row: DailyMetric? { repo.today }
     private var dayKey: String { row?.day ?? Repository.localDayKey(Date()) }
@@ -35,6 +36,7 @@ struct NathanTodayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: NathanStyle.sectionGap) {
                 header
+                NathanSignalsCard()
                 scoresCard
                 lastNight
                 activity
@@ -47,7 +49,14 @@ struct NathanTodayView: View {
         }
         .background(NathanStyle.canvas.ignoresSafeArea())
         .refreshable { await repo.refresh() }
-        .task(id: repo.refreshSeq) { await load() }
+        .task(id: repo.refreshSeq) {
+            await load()
+            if NathanMorningJournalGate.shouldShow(today: repo.today) {
+                NathanMorningJournalGate.markShown()
+                showJournal = true
+            }
+        }
+        .fullScreenCover(isPresented: $showJournal) { NathanMorningJournal() }
     }
 
     // MARK: Header
@@ -74,7 +83,7 @@ struct NathanTodayView: View {
         NathanCard(padding: 14) {
             VStack(spacing: 16) {
                 HStack(alignment: .top) {
-                    scoreColumn(title: "SLEEP", color: NathanStyle.sleepColor,
+                    scoreColumn(title: "SLEEP", color: NathanStyle.sleepPerfColor(sleepPerf[dayKey]),
                                 fraction: sleepPerf[dayKey].map { $0 / 100 },
                                 center: sleepPerf[dayKey].map { NathanFormat.int($0) },
                                 pct: true,
@@ -111,7 +120,7 @@ struct NathanTodayView: View {
         VStack(spacing: 10) {
             NathanRing(fraction: fraction, color: color) {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(center ?? "—").font(NathanStyle.number(30)).foregroundStyle(NathanStyle.text)
+                    Text(center ?? "—").font(NathanStyle.number(30)).foregroundStyle(center == nil ? NathanStyle.text3 : color)
                     if pct && center != nil {
                         Text("%").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(NathanStyle.text3)
                     }
@@ -300,7 +309,7 @@ struct NathanTodayView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("NEXT LIFT · \(Self.nextTrainDay().uppercased())")
                         .font(NathanStyle.label).tracking(0.6).foregroundStyle(NathanStyle.text3)
-                    Text("Open your workout log").font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text("Open your workouts").font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(NathanStyle.text)
                 }
                 Spacer()

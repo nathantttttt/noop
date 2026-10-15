@@ -39,6 +39,8 @@ struct LiftSessionView: View {
     /// Program lines whose set count this session changed, read when the finish sheet opens.
     @State private var setCountChanges: [LiftSessionController.SetCountChange] = []
     @State private var addingExercise = false
+    /// Nathan's full-screen rest: the rest it was minimised for, so a new rest brings it back.
+    @State private var minimizedRestEnd: Int?
     /// The card to bring into view once an exercise has been added — the new one, at the end.
     @State private var scrollTarget: Int?
 
@@ -99,7 +101,25 @@ struct LiftSessionView: View {
             draft = draft.filter { $0.key == now }
         }
         .sheet(isPresented: $showingFinish) { finishSheet }
+        #if os(iOS)
+        .overlay { nathanRestOverlay }
+        #endif
     }
+
+    #if os(iOS)
+    /// Full-screen rest (Nathan's build) over the sheet while a rest runs, until minimised.
+    @ViewBuilder private var nathanRestOverlay: some View {
+        if let engine, case .resting(_, let endsAt) = engine.stage, minimizedRestEnd != endsAt {
+            NathanRestScreen(session: session, units: unitSystem,
+                             onMinimize: { minimizedRestEnd = endsAt },
+                             onFinishWorkout: {
+                                 minimizedRestEnd = endsAt
+                                 showingFinish = true
+                             })
+                .transition(.opacity)
+        }
+    }
+    #endif
 
     // MARK: - The scrollable sheet
 

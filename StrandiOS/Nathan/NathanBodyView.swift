@@ -32,6 +32,7 @@ struct NathanBodyView: View {
             VStack(alignment: .leading, spacing: NathanStyle.sectionGap) {
                 header
                 goals
+                leanVsFat
                 scan
                 NathanProgressPhotos(bodyFatByDay: Dictionary(bodyFat.map { ($0.day, NathanTodayView.pct($0.value)) },
                                                               uniquingKeysWith: { _, b in b }))
@@ -125,6 +126,74 @@ struct NathanBodyView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(NathanStyle.card, in: RoundedRectangle(cornerRadius: NathanStyle.tileRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: NathanStyle.tileRadius, style: .continuous).stroke(NathanStyle.line, lineWidth: 1))
+    }
+
+    // MARK: Lean vs fat
+
+    struct CompPoint: Identifiable {
+        let date: Date
+        let value: Double
+        let series: String
+        var id: String { series + "\(date.timeIntervalSince1970)" }
+    }
+
+    /// Lean mass and fat mass (weight × body fat) on one chart, so muscle going up while fat goes down
+    /// reads as the two lines pulling apart.
+    private var leanVsFat: some View {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        let w = Dictionary(weight.map { ($0.day, $0.value) }, uniquingKeysWith: { _, b in b })
+        let l = Dictionary(lean.map { ($0.day, $0.value) }, uniquingKeysWith: { _, b in b })
+        var pts: [CompPoint] = []
+        for b in bodyFat where b.day >= cutoff {
+            guard let date = f.date(from: b.day) else { continue }
+            let pct = NathanTodayView.pct(b.value)
+            if let wk = w[b.day] {
+                pts.append(CompPoint(date: date, value: mass(wk * pct / 100), series: "Fat mass"))
+                let leanKg = l[b.day] ?? wk * (1 - pct / 100)
+                pts.append(CompPoint(date: date, value: mass(leanKg), series: "Lean mass"))
+            }
+        }
+        let shown = pts
+        let unit = UnitFormatter.massUnit(units)
+        return NathanCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Lean mass vs fat mass").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                    Spacer()
+                    Text(unit).font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                }
+                if Set(shown.map(\.date)).count >= 2 {
+                    Chart(shown) { p in
+                        LineMark(x: .value("Day", p.date), y: .value(unit, p.value))
+                            .foregroundStyle(by: .value("Series", p.series))
+                            .interpolationMethod(.catmullRom)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5))
+                        PointMark(x: .value("Day", p.date), y: .value(unit, p.value))
+                            .foregroundStyle(by: .value("Series", p.series))
+                            .symbolSize(22)
+                    }
+                    .chartForegroundStyleScale(["Lean mass": NathanStyle.good, "Fat mass": NathanStyle.warn])
+                    .chartYScale(domain: .automatic(includesZero: false))
+                    .chartLegend(position: .top, alignment: .leading)
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                            AxisGridLine().foregroundStyle(NathanStyle.line)
+                            AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(NathanStyle.text3)
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
+                            AxisGridLine().foregroundStyle(NathanStyle.line)
+                            AxisValueLabel().foregroundStyle(NathanStyle.text3)
+                        }
+                    }
+                    .frame(height: 200)
+                } else {
+                    Text("Needs two scans with weight and body fat in this range.")
+                        .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                }
+            }
+        }
     }
 
     // MARK: Scan

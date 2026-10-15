@@ -68,10 +68,17 @@ enum ShortcutHealthImport {
         var asleepMin: Double? = nil
         var vo2max: Double? = nil
         var weightKg: Double? = nil
+        // Optional trailing columns (Nathan's build): a smart scale's body composition and an
+        // under-mattress sensor's sleep window, both as Apple Health hands them to a Shortcut.
+        var bodyFatPct: Double? = nil
+        var leanKg: Double? = nil
+        var sleepStartTs: Int? = nil
+        var sleepEndTs: Int? = nil
 
         var hasAnyMetric: Bool {
             steps != nil || activeKcal != nil || restingHr != nil || hrvMs != nil
                 || avgHr != nil || asleepMin != nil || vo2max != nil || weightKg != nil
+                || bodyFatPct != nil || leanKg != nil || sleepStartTs != nil
         }
     }
 
@@ -174,7 +181,7 @@ enum ShortcutHealthImport {
     }
 
     private static func parseDay(_ f: [String]) -> ParsedDay? {
-        // D,day,steps,activeKcal,restingHr,hrvMs,avgHr,asleepMin,vo2max,weightKg
+        // D,day,steps,activeKcal,restingHr,hrvMs,avgHr,asleepMin,vo2max,weightKg[,bodyFatPct,leanKg,sleepStartUnix,sleepEndUnix]
         guard let day = field(f, 1), isValidDay(day) else { return nil }
         var d = ParsedDay(day: day)
         d.steps      = field(f, 2).flatMap { Int($0) }
@@ -185,6 +192,12 @@ enum ShortcutHealthImport {
         d.asleepMin  = field(f, 7).flatMap { Double($0) }
         d.vo2max     = field(f, 8).flatMap { Double($0) }
         d.weightKg   = field(f, 9).flatMap { Double($0) }
+        // Body fat arrives as a percent (21.3) or a fraction (0.213) depending on how the Shortcut reads it.
+        d.bodyFatPct = field(f, 10).flatMap { Double($0) }.map { $0 <= 1 ? $0 * 100 : $0 }
+        d.leanKg     = field(f, 11).flatMap { Double($0) }
+        if let s = field(f, 12).flatMap({ Int($0) }), let e = field(f, 13).flatMap({ Int($0) }), e > s {
+            d.sleepStartTs = s; d.sleepEndTs = e
+        }
         return d.hasAnyMetric ? d : nil
     }
 
@@ -245,6 +258,10 @@ enum ShortcutHealthImport {
             add("asleep_min", d.asleepMin)
             add("vo2max", d.vo2max)
             add("weight", d.weightKg)
+            add("body_fat", d.bodyFatPct)
+            add("lean_mass", d.leanKg)
+            add("ext_sleep_start", d.sleepStartTs.map(Double.init))
+            add("ext_sleep_end", d.sleepEndTs.map(Double.init))
         }
         return out
     }

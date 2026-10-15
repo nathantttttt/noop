@@ -1277,6 +1277,9 @@ public final class BLEManager: NSObject, ObservableObject {
     /// pick so restoration/reconnect after a relaunch target the right strap.
     private var selectedModel: WhoopModel = .persisted
     private var lastStandardHRLogAt: Date?
+    /// Throttle for the water-reminder check (Nathan's build), so a 1 Hz HR stream costs one
+    /// UserDefaults read every 20 s.
+    private var lastWaterCheckAt: Date?
     /// Counts unreadable standard heart-rate samples in a row, so a run of them clears the shown heart rate.
     private var heartRateReadability = LiveHeartRateReadability()
     /// The skin-contact flag the last standard heart-rate sample carried, so a change is logged once.
@@ -2723,6 +2726,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // Inactivity reminder (#419): read-only hook on the natural offload completion (no cadence
         // change). Only on a true HISTORY_COMPLETE — a timeout/disconnect didn't bring a fresh window.
         if reason == "HISTORY_COMPLETE" { maybeBuzzInactivity() }
+        maybeBuzzWater()
         // Success-side summary (#150 forensics): we logged failures (decoded-to-0) but never successes,
         // so a strap log couldn't tell a banking strap from a broken one. Emit the per-session persistence
         // tally whenever anything actually landed — the win-rate signal a log previously lacked.
@@ -3138,6 +3142,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// (strap not ahead) is NOT stuck. On stuck: attempt recovery (defensive EXIT + SET_CLOCK) and raise
     /// the surface. Best-effort; reads the frontier via the Collector (which owns the concrete store).
     private func checkStrapLiveness() {
+        maybeBuzzWater()
         let strapNewest = strapNewestTs
         Task { @MainActor in
             let frontier = await collector?.latestHRSampleTs()
@@ -5630,6 +5635,20 @@ public final class BLEManager: NSObject, ObservableObject {
         }
     }
 
+    /// Nathan's hourly water reminder: one buzz in the first minutes of each hour inside the configured
+    /// window. Driven by Bluetooth events the app already receives (live HR, offload completion, the
+    /// liveness tick), so it adds no command and no timer. Reuses the inactivity reminder's haptic
+    /// payload, and only marks the hour done once a buzz was actually sent to a worn, connected strap.
+    private func maybeBuzzWater() {
+        let now = Date()
+        if let last = lastWaterCheckAt, now.timeIntervalSince(last) < 20 { return }
+        lastWaterCheckAt = now
+        guard state.connected, state.worn, let key = WaterReminder.dueHourKey(now: now) else { return }
+        WaterReminder.markBuzzed(key)
+        send(.runHapticsPattern, payload: [2, 2, 0, 0, 0])
+        log("Water reminder: buzzed for \(key).")
+    }
+
     /// Inactivity reminder (#419): on each natural offload completion, run the shipped, unit-tested
     /// `SedentaryDetector` over the freshly-arrived gravity window and buzz the wrist if the user has
     /// been seated too long. NO offload-timer change — a read-only hook on an event that already
@@ -5681,6 +5700,7 @@ public final class BLEManager: NSObject, ObservableObject {
             return
         }
         let now = Date()
+        maybeBuzzWater()
         if lastStandardHRLogAt.map({ now.timeIntervalSince($0) >= 30 }) ?? true {
             lastStandardHRLogAt = now
             log(BLEManager.standardHrNotifyLine(hr: m.hr, rrCount: m.rr.count))

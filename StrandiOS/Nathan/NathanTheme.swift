@@ -37,6 +37,21 @@ enum NathanStyle {
         return bad
     }
 
+    /// Sleep performance (% of need): green 85+ (optimal), yellow 70–84 (sufficient), red below 70.
+    static func sleepPerfColor(_ pct: Double?) -> Color {
+        guard let pct else { return text3 }
+        if pct >= 85 { return good }
+        if pct >= 70 { return warn }
+        return bad
+    }
+
+    static func sleepPerfLabel(_ pct: Double?) -> String {
+        guard let pct else { return "—" }
+        if pct >= 85 { return "Optimal" }
+        if pct >= 70 { return "Sufficient" }
+        return "Poor"
+    }
+
     static func recoveryLabel(_ pct: Double?) -> String {
         guard let pct else { return "Calibrating" }
         if pct >= 67 { return "Recovered" }

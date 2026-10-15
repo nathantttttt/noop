@@ -64,7 +64,11 @@ struct StrandiOSApp: App {
             "units.system": "imperial",             // lb, ft/in, °F
             "effort.scale": "whoop",                // strain on the 0–21 scale
             "theme.appearance": "dark",
+            "behavior.illnessWatch": true,          // illness / strain early warning on
+            "nathan.morningJournal": true,
         ])
+        WaterReminder.register()
+        WaterReminder.reschedulePhoneNotifications()
         // #1008: pin the pre-change Overnight-only default for existing installs before
         // anything reads it. Idempotent; a no-op on fresh installs and after the first launch.
         PuffinExperiment.migrateContinuousHrvOvernightDefault()

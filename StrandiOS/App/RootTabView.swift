@@ -130,7 +130,7 @@ struct RootTabView: View {
             // More. Tags stay fixed so `tabPaths` / `scrollTop` keep one slot per tab.
             tab(NathanTodayView(), "Today", "circle.circle", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(NathanSleepView(), "Sleep", "moon.zzz", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
-            tab(LiftLogView(), "Lift", "dumbbell", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
+            tab(NathanWorkoutView(), "Workout", "dumbbell", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
             tab(NathanBodyView(), "Body", "figure.arms.open", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
@@ -456,6 +456,8 @@ struct RootTabView: View {
                            onRefresh: { await repo.refresh() },
                            topBackground: liquidScaffoldSky()) {
                 moreSection("Classic screens") {
+                    MoreRow("My settings", "slider.horizontal.3", .nathanSettings)
+                    MoreRow("Journal", "book.closed", .nathanJournal)
                     MoreRow("Trends", "chart.line.uptrend.xyaxis", .trends)
                     MoreRow("Classic Today", "square.grid.2x2", .classicToday)
                     MoreRow("Sleep details", "bed.double", .classicSleep)
@@ -597,7 +599,7 @@ struct RootTabView: View {
 /// per-screen chrome the old inline links applied lives at the single `navigationDestination(for:)`
 /// registration in `moreTab`.
 private enum MoreDestination: Hashable {
-    case trends, classicToday, classicSleep
+    case trends, classicToday, classicSleep, nathanSettings, nathanJournal
     case insightsHub, intelligence, coach, insights, explore, compare
     case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
@@ -606,6 +608,8 @@ private enum MoreDestination: Hashable {
     @ViewBuilder var destination: some View {
         switch self {
         case .trends:          TrendsView()
+        case .nathanSettings:  NathanSettingsView()
+        case .nathanJournal:   InsightsView()
         case .classicToday:    TodayView()
         case .classicSleep:    SleepView()
         case .insightsHub:     InsightsHubView()

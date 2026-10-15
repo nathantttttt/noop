@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UserNotifications
 import WhoopStore
 import StrandAnalytics
 
@@ -137,6 +138,9 @@ final class LiftSessionController: ObservableObject {
         isPresented = true
         claimStrap()
         persist()
+        // Ask once, at the first session, so the rest-done notification can reach a phone that is
+        // in another app. A no-op after the first answer.
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     /// Pick up the session a previous run of NOOP left going, as the app process starts.
@@ -377,6 +381,23 @@ final class LiftSessionController: ObservableObject {
 
     private func lastSessionSets(for slot: LiftSlot) -> [Int: LiftSetCarry] {
         engine?.planItem(for: slot).flatMap { lastSession[$0.exercise] } ?? [:]
+    }
+
+    /// What this exact set was LAST session (not the in-session carry). Nil when it was never done.
+    func lastTime(for slot: LiftSlot) -> LiftSetCarry? {
+        lastSessionSets(for: slot)[slot.setIndex]
+    }
+
+    /// True when every set of this exercise's previous session reached the line's top rep target — the
+    /// double-progression cue to add weight this time. The top target is the high end of a range when
+    /// one exists, else the single reps figure the program carries.
+    func shouldGoUp(exerciseIndex: Int) -> Bool {
+        guard let engine, engine.plan.indices.contains(exerciseIndex) else { return false }
+        let item = engine.plan[exerciseIndex]
+        guard let top = item.targetRepsHigh ?? item.targetRepsLow, top > 0 else { return false }
+        let last = lastSession[item.exercise] ?? [:]
+        let reps = (0..<item.targetSets).compactMap { last[$0]?.reps }
+        return reps.count >= item.targetSets && item.targetSets > 0 && reps.allSatisfy { $0 >= top }
     }
 
     /// Mark a slot as a warm-up (or not). Applies immediately when the set already exists, and is
@@ -682,12 +703,39 @@ final class LiftSessionController: ObservableObject {
         scheduledRestEnd = endsAt
         restTimers.forEach { $0.cancel() }
         restTimers = []
+        scheduleRestNotification(endsAt: endsAt)
         guard let endsAt else { return }
         let times = Self.restEventTimes(endsAt: endsAt, now: Self.unixNow)
         restTimers.append(after(times.warning) { $0.fireRestWarningIfDue() })
         if let end = times.end {
             restTimers.append(after(end) { $0.restDidEnd() })
         }
+    }
+
+    static let restNotificationId = "noop.lift.restDone"
+
+    /// A local notification at the rest's end, so the end reaches a phone that is in another app or
+    /// locked — the in-process timers stop when iOS suspends NOOP. Replaced on every rest change and
+    /// removed when no rest is running.
+    private func scheduleRestNotification(endsAt: Int?) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.restNotificationId])
+        let now = Self.unixNow
+        guard let endsAt, endsAt > now + 1, let engine,
+              case .resting(let slot, _) = engine.stage else { return }
+        let content = UNMutableNotificationContent()
+        if let next = engine.slotAfter(slot), let item = engine.planItem(for: next) {
+            content.title = "Rest's up"
+            content.body = next.exerciseIndex == slot.exerciseIndex
+                ? "Set \(next.setIndex + 1) of \(item.exercise)"
+                : "Next: \(item.exercise)"
+        } else {
+            content.title = "Rest's up"
+            content.body = "Pick your next exercise or finish the workout."
+        }
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(endsAt - now), repeats: false)
+        center.add(UNNotificationRequest(identifier: Self.restNotificationId, content: content, trigger: trigger))
     }
 
     /// When a rest's warning and end fire, in unix seconds. The warning comes `restWarningLeadSec` before the
