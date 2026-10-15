@@ -74,11 +74,15 @@ enum ShortcutHealthImport {
         var leanKg: Double? = nil
         var sleepStartTs: Int? = nil
         var sleepEndTs: Int? = nil
+        // Nutrition logged in MacroFactor, as Apple Health hands it to the Shortcut action.
+        var dietaryKcal: Double? = nil
+        var proteinG: Double? = nil
 
         var hasAnyMetric: Bool {
             steps != nil || activeKcal != nil || restingHr != nil || hrvMs != nil
                 || avgHr != nil || asleepMin != nil || vo2max != nil || weightKg != nil
                 || bodyFatPct != nil || leanKg != nil || sleepStartTs != nil
+                || dietaryKcal != nil || proteinG != nil
         }
     }
 
@@ -298,6 +302,8 @@ enum ShortcutHealthImport {
             add("lean_mass", d.leanKg)
             add("ext_sleep_start", d.sleepStartTs.map(Double.init))
             add("ext_sleep_end", d.sleepEndTs.map(Double.init))
+            add("dietary_kcal", d.dietaryKcal)
+            add("protein_g", d.proteinG)
         }
         return out
     }

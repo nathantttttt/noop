@@ -83,12 +83,12 @@ struct NathanActivityRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(NathanActivity.isLift(workout) ? (workout.notes?.isEmpty == false ? workout.notes! : "Lift")
                      : WorkoutSource.displaySport(workout.sport))
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                    .font(.system(size: 15, weight: .bold)).foregroundStyle(NathanStyle.text)
                     .lineLimit(1)
                 Text(Date(timeIntervalSince1970: TimeInterval(workout.startTs))
                         .formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
                      + " · " + NathanActivity.durationText(NathanActivity.duration(workout)))
-                    .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
@@ -96,7 +96,7 @@ struct NathanActivityRow: View {
                     Text(NathanFormat.one(s)).font(NathanStyle.number(18)).foregroundStyle(NathanStyle.strainColor)
                 }
                 if let hr = workout.avgHr {
-                    Text("\(hr) avg").font(.system(size: 11, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    Text("\(hr) avg").font(.system(size: 11)).foregroundStyle(NathanStyle.text3)
                 }
             }
             Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
@@ -119,13 +119,13 @@ struct NathanCardioPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: NathanStyle.sectionGap) {
                 VStack(alignment: .leading, spacing: NathanStyle.gap) {
-                    Text("Cardio").font(.system(size: 28, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                    Text("Cardio").font(.system(size: 28, weight: .heavy)).foregroundStyle(NathanStyle.text)
                     Text("Bike, run, walk, pickleball, golf — anything. Start one to record your heart rate live, or log one you already did.")
-                        .font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                        .font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
                     WorkoutStartControl()
                     Button { logging = true } label: {
                         Label("Log a past activity", systemImage: "square.and.pencil")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(.system(size: 15, weight: .semibold))
                             .frame(maxWidth: .infinity).frame(height: 50)
                             .foregroundStyle(NathanStyle.text)
                             .background(NathanStyle.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -137,7 +137,7 @@ struct NathanCardioPane: View {
                 VStack(alignment: .leading, spacing: NathanStyle.gap) {
                     NathanSectionHeader(title: "Recent cardio")
                     if recent.isEmpty {
-                        Text("Nothing yet.").font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        Text("Nothing yet.").font(.system(size: 14)).foregroundStyle(NathanStyle.text3)
                     }
                     ForEach(recent.prefix(12), id: \.startTs) { w in
                         NavigationLink { NathanActivityDetail(workout: w) } label: { NathanActivityRow(workout: w) }
@@ -173,13 +173,13 @@ struct NathanCardioPane: View {
         return NathanCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("This week").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                    Text("This week").font(.system(size: 15, weight: .bold)).foregroundStyle(NathanStyle.text)
                     Spacer()
-                    Text(delta?.text ?? "").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(delta?.color ?? NathanStyle.text3)
+                    Text(delta?.text ?? "").font(.system(size: 12, weight: .medium)).foregroundStyle(delta?.color ?? NathanStyle.text3)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(thisMin)").font(NathanStyle.number(34)).foregroundStyle(NathanStyle.text)
-                    Text("/ 150 min cardio").font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    Text("/ 150 min cardio").font(.system(size: 14)).foregroundStyle(NathanStyle.text3)
                 }
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
@@ -209,14 +209,14 @@ struct NathanHistoryPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NathanStyle.gap) {
-                Text("History").font(.system(size: 28, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                Text("History").font(.system(size: 28, weight: .heavy)).foregroundStyle(NathanStyle.text)
                 Picker("Show", selection: $filter) {
                     Text("All").tag(0); Text("Lifts").tag(1); Text("Cardio").tag(2)
                 }
                 .pickerStyle(.segmented)
                 let shown = rows.filter { filter == 0 || (filter == 1) == NathanActivity.isLift($0) }
                 if shown.isEmpty {
-                    Text("No activities yet.").font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    Text("No activities yet.").font(.system(size: 14)).foregroundStyle(NathanStyle.text3)
                         .padding(.top, 8)
                 }
                 ForEach(shown, id: \.startTs) { w in
@@ -259,21 +259,21 @@ struct NathanActivityDetail: View {
                 NathanCard {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("Heart rate").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                            Text("Heart rate").font(.system(size: 15, weight: .bold)).foregroundStyle(NathanStyle.text)
                             Spacer()
-                            Text("Drag to see any moment").font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                            Text("Drag to see any moment").font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                         }
                         if points.count >= 4 {
                             NathanScrubHRChart(points: points, height: 220, color: NathanStyle.bad, restingLine: nil)
                         } else {
                             Text(loaded ? "No heart-rate data was recorded for this activity." : "Loading…")
-                                .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                                .font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
                         }
                     }
                 }
                 if let notes = workout.notes, !notes.isEmpty, !NathanActivity.isLift(workout) {
                     NathanCard {
-                        Text(notes).font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                        Text(notes).font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
                     }
                 }
             }
@@ -295,11 +295,11 @@ struct NathanActivityDetail: View {
                 .background(NathanStyle.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text(NathanActivity.isLift(workout) ? (workout.notes ?? "Lift") : WorkoutSource.displaySport(workout.sport))
-                    .font(.system(size: 24, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                    .font(.system(size: 24, weight: .heavy)).foregroundStyle(NathanStyle.text)
                 Text(Date(timeIntervalSince1970: TimeInterval(workout.startTs))
                         .formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
                      + " · " + NathanFormat.clock(workout.startTs) + " – " + NathanFormat.clock(workout.endTs))
-                    .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    .font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
             }
         }
     }
@@ -390,10 +390,10 @@ struct NathanScrubHRChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(spacing: 1) {
-                            Text("\(Int(p.bpm.rounded())) bpm").font(.system(size: 13, weight: .bold, design: .rounded))
+                            Text("\(Int(p.bpm.rounded())) bpm").font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(NathanStyle.text)
                             Text(p.date.formatted(.dateTime.hour().minute()))
-                                .font(.system(size: 11, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                                .font(.system(size: 11)).foregroundStyle(NathanStyle.text3)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(NathanStyle.inset, in: RoundedRectangle(cornerRadius: 8))

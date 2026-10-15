@@ -66,7 +66,7 @@ struct NathanTodayView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(Date().formatted(.dateTime.weekday(.wide).month(.abbreviated).day()).uppercased())
                     .font(NathanStyle.label).tracking(0.8).foregroundStyle(NathanStyle.text3)
-                Text("Today").font(.system(size: 30, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                Text("Today").font(.system(size: 30, weight: .heavy)).foregroundStyle(NathanStyle.text)
             }
             Spacer()
             NathanStrapPill()
@@ -105,7 +105,7 @@ struct NathanTodayView: View {
                         VStack(spacing: 2) {
                             Text("STRAIN").font(NathanStyle.label).tracking(1).foregroundStyle(NathanStyle.strainColor)
                             Text(targetRange.map { "Target \($0.lowerBound)–\($0.upperBound)" } ?? "No target yet")
-                                .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                                .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                         }
                     }
                     .frame(width: 108)
@@ -122,13 +122,13 @@ struct NathanTodayView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text(center ?? "—").font(NathanStyle.number(30)).foregroundStyle(center == nil ? NathanStyle.text3 : color)
                     if pct && center != nil {
-                        Text("%").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        Text("%").font(.system(size: 16, weight: .semibold)).foregroundStyle(NathanStyle.text3)
                     }
                 }
             }
             VStack(spacing: 2) {
                 Text(title).font(NathanStyle.label).tracking(1).foregroundStyle(color)
-                Text(caption).font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                Text(caption).font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
             }
         }
         .frame(width: 108)
@@ -151,7 +151,7 @@ struct NathanTodayView: View {
                                 .foregroundColor(NathanStyle.text2)
                         }
                     }
-                    .font(.system(size: 13, design: .rounded))
+                    .font(.system(size: 13))
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
                             Capsule().fill(NathanStyle.inset)
@@ -160,7 +160,7 @@ struct NathanTodayView: View {
                     }
                     .frame(height: 6)
                 }
-                Text("Based on recovery").font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                Text("Based on recovery").font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                     .fixedSize()
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
@@ -283,13 +283,13 @@ struct NathanTodayView: View {
 
     private func bodyStat(_ label: String, value: String?, unit: String, delta: NathanDelta?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+            Text(label).font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value ?? "—").font(NathanStyle.number(26)).foregroundStyle(NathanStyle.text)
                     .lineLimit(1).minimumScaleFactor(0.6)
-                if value != nil { Text(unit).font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3) }
+                if value != nil { Text(unit).font(.system(size: 12)).foregroundStyle(NathanStyle.text3) }
             }
-            Text(delta?.text ?? " ").font(.system(size: 12, weight: .medium, design: .rounded))
+            Text(delta?.text ?? " ").font(.system(size: 12, weight: .medium))
                 .foregroundStyle(delta?.color ?? NathanStyle.text3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -309,7 +309,7 @@ struct NathanTodayView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("NEXT LIFT · \(Self.nextTrainDay().uppercased())")
                         .font(NathanStyle.label).tracking(0.6).foregroundStyle(NathanStyle.text3)
-                    Text("Open your workouts").font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text("Open your workouts").font(.system(size: 15, weight: .bold))
                         .foregroundStyle(NathanStyle.text)
                 }
                 Spacer()
@@ -359,7 +359,7 @@ struct NathanStrapPill: View {
         HStack(spacing: 7) {
             Circle().fill(live.connected ? NathanStyle.good : NathanStyle.text3).frame(width: 7, height: 7)
             Text(live.batteryPct.map { "WHOOP · \(Int($0.rounded()))%" } ?? (live.connected ? "WHOOP" : "Not connected"))
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(NathanStyle.text2)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)

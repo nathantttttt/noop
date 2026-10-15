@@ -29,7 +29,7 @@ struct NathanRestScreen: View {
         return VStack(spacing: 18) {
             HStack {
                 Button("Minimize", action: onMinimize)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(NathanStyle.text2)
                     .padding(.horizontal, 16).frame(height: 44)
                     .background(NathanStyle.card, in: Capsule())
@@ -39,10 +39,10 @@ struct NathanRestScreen: View {
             }
 
             VStack(spacing: 4) {
-                Text(item.exercise).font(.system(size: 22, weight: .heavy, design: .rounded))
+                Text(item.exercise).font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(NathanStyle.text).multilineTextAlignment(.center)
                 Text("Set \(slot.setIndex + 1) of \(item.targetSets) done")
-                    .font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    .font(.system(size: 14)).foregroundStyle(NathanStyle.text3)
             }
 
             countdown(endsAt: endsAt, total: max(1, item.restSec))
@@ -79,7 +79,7 @@ struct NathanRestScreen: View {
                         .font(NathanStyle.number(60)).foregroundStyle(NathanStyle.text)
                         .monospacedDigit()
                     Text(done ? "rest is up" : "of \(Self.mmss(total)) rest")
-                        .font(.system(size: 13, design: .rounded))
+                        .font(.system(size: 13))
                         .foregroundStyle(done ? NathanStyle.good : NathanStyle.text3)
                 }
             }
@@ -101,11 +101,11 @@ struct NathanRestScreen: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("What you just did").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                Text("What you just did").font(.system(size: 15, weight: .bold)).foregroundStyle(NathanStyle.text)
                 Spacer()
                 if let last, last.weightKg != nil || last.reps != nil {
                     Text("Last time \(last.weightKg.map { NathanFormat.one(toDisplay($0)).replacingOccurrences(of: ".0", with: "") } ?? "—") \(unitLabel) × \(last.reps.map(String.init) ?? "—")")
-                        .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        .font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
                 }
             }
 
@@ -114,7 +114,7 @@ struct NathanRestScreen: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(shownWeight.map { NathanFormat.one($0).replacingOccurrences(of: ".0", with: "") } ?? "—")
                         .font(NathanStyle.number(40)).foregroundStyle(NathanStyle.text)
-                    Text(unitLabel).font(.system(size: 15, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    Text(unitLabel).font(.system(size: 15)).foregroundStyle(NathanStyle.text3)
                 }
                 .frame(maxWidth: .infinity).frame(height: 60)
                 .background(NathanStyle.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -123,7 +123,7 @@ struct NathanRestScreen: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(top.map { "Reps · target \($0)" } ?? "Reps")
-                    .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(chips, id: \.self) { r in
@@ -145,7 +145,7 @@ struct NathanRestScreen: View {
 
             if goUp {
                 Label("You hit every rep last time. Go up in weight.", systemImage: "arrow.up.circle.fill")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(NathanStyle.accent)
             }
         }
@@ -181,7 +181,7 @@ struct NathanRestScreen: View {
             return PendingExercise(index: i, slot: s)
         }
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Exercise done. What's next?").font(.system(size: 15, weight: .bold, design: .rounded))
+            Text("Exercise done. What's next?").font(.system(size: 15, weight: .bold))
                 .foregroundStyle(NathanStyle.text)
             ScrollView {
                 VStack(spacing: 8) {
@@ -190,11 +190,11 @@ struct NathanRestScreen: View {
                         Button { session.start(p.slot) } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(engine.plan[i].exercise).font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    Text(engine.plan[i].exercise).font(.system(size: 15, weight: .semibold))
                                         .foregroundStyle(NathanStyle.text)
                                     Text("\(engine.slots(forExercise: i).filter { !engine.isCompleted($0) }.count) sets left"
                                          + (session.shouldGoUp(exerciseIndex: i) ? " · go up in weight" : ""))
-                                        .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                                        .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                                 }
                                 Spacer()
                                 Image(systemName: "play.fill").foregroundStyle(NathanStyle.accent)
@@ -214,7 +214,7 @@ struct NathanRestScreen: View {
 
     private func stepButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.system(size: 18, weight: .bold, design: .rounded))
+            Text(title).font(.system(size: 18, weight: .bold))
                 .frame(width: 64, height: 60)
                 .foregroundStyle(NathanStyle.text)
                 .background(NathanStyle.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -224,7 +224,7 @@ struct NathanRestScreen: View {
 
     private func bigButton(_ title: String, filled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.system(size: 17, weight: .heavy, design: .rounded))
+            Text(title).font(.system(size: 17, weight: .heavy))
                 .frame(maxWidth: .infinity).frame(height: 58)
                 .foregroundStyle(filled ? StrandPalette.goldDeepText : NathanStyle.text)
                 .background(filled ? NathanStyle.accent : NathanStyle.card,
@@ -248,7 +248,7 @@ struct NathanLiftHeartRate: View {
         HStack(spacing: 6) {
             Image(systemName: "heart.fill").foregroundStyle(NathanStyle.bad)
             Text(live.heartRate.map { "\($0) bpm" } ?? "— bpm")
-                .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                .font(.system(size: 14, weight: .semibold)).foregroundStyle(NathanStyle.text2)
                 .monospacedDigit()
         }
         .padding(.horizontal, 14).frame(height: 44)

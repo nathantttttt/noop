@@ -7,34 +7,34 @@ import SwiftUI
 import StrandDesign
 
 enum NathanStyle {
-    static let page: CGFloat = 20
-    static let gap: CGFloat = 12
+    static let page: CGFloat = 16
+    static let gap: CGFloat = 13
     static let sectionGap: CGFloat = 22
-    static let cardRadius: CGFloat = 20
-    static let tileRadius: CGFloat = 18
+    static let cardRadius: CGFloat = 12
+    static let tileRadius: CGFloat = 12
 
-    static var canvas: Color { StrandPalette.surfaceBase }
-    static var card: Color { StrandPalette.surfaceRaised }
-    static var inset: Color { StrandPalette.surfaceInset }
-    static var line: Color { StrandPalette.hairline }
-    static var text: Color { StrandPalette.textPrimary }
-    static var text2: Color { StrandPalette.textSecondary }
-    static var text3: Color { StrandPalette.textTertiary }
-    static var accent: Color { StrandPalette.accent }
-    static var good: Color { StrandPalette.statusPositive }
-    static var bad: Color { StrandPalette.statusCritical }
-    static var warn: Color { StrandPalette.statusWarning }
+    // Nathan's build: these tokens now resolve to the WHOOP-style palette (WTheme.swift), so the
+    // Workout / Body / rest-timer / journal screens share the look of Home and the Trend View.
+    static var canvas: Color { W.bgMid }
+    static var card: Color { W.row }
+    static var inset: Color { W.inset }
+    static var line: Color { W.hairline }
+    static var text: Color { W.text }
+    static var text2: Color { W.text2 }
+    static var text3: Color { W.text3 }
+    static var accent: Color { W.mint }
+    static var good: Color { W.mint }
+    static var bad: Color { W.red }
+    static var warn: Color { W.yellow }
 
     /// Fixed identity colours for the three daily scores.
-    static var sleepColor: Color { StrandPalette.sleepLight }
-    static var strainColor: Color { StrandPalette.metricPurple }
+    static var sleepColor: Color { W.sleep }
+    static var strainColor: Color { W.strain }
 
     /// WHOOP-style recovery colour: green 67+, yellow 34–66, red below.
     static func recoveryColor(_ pct: Double?) -> Color {
         guard let pct else { return text3 }
-        if pct >= 67 { return good }
-        if pct >= 34 { return warn }
-        return bad
+        return W.recoveryColor(pct)
     }
 
     /// Sleep performance (% of need): green 85+ (optimal), yellow 70–84 (sufficient), red below 70.
@@ -59,8 +59,8 @@ enum NathanStyle {
         return "Low"
     }
 
-    static func number(_ size: CGFloat) -> Font { StrandFont.number(size, weight: .bold) }
-    static let label = Font.system(size: 12, weight: .semibold, design: .rounded)
+    static func number(_ size: CGFloat) -> Font { W.num(size) }
+    static let label = Font.system(size: 12, weight: .bold)
 }
 
 // MARK: - Trend direction → colour
@@ -140,15 +140,15 @@ struct NathanSectionHeader: View {
     var action: (() -> Void)? = nil
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+            Text(title).font(.system(size: 17, weight: .bold)).foregroundStyle(NathanStyle.text)
             Spacer()
             if let trailing {
                 if let action {
                     Button(trailing, action: action)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(NathanStyle.text2)
                 } else {
-                    Text(trailing).font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text(trailing).font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(NathanStyle.text3)
                 }
             }
@@ -170,10 +170,10 @@ struct NathanTile: View {
                 Text(value).font(NathanStyle.number(32)).foregroundStyle(NathanStyle.text)
                     .lineLimit(1).minimumScaleFactor(0.6)
                 if !unit.isEmpty {
-                    Text(unit).font(.system(size: 15, weight: .medium, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    Text(unit).font(.system(size: 15, weight: .medium)).foregroundStyle(NathanStyle.text3)
                 }
             }
-            Text(footer ?? " ").font(.system(size: 12, weight: .medium, design: .rounded))
+            Text(footer ?? " ").font(.system(size: 12, weight: .medium))
                 .foregroundStyle(footerColor).lineLimit(1).minimumScaleFactor(0.8)
         }
         .padding(.horizontal, 16).padding(.vertical, 14)

@@ -456,12 +456,13 @@ struct RootTabView: View {
     // rows in a single grouped NoopCard with hairline dividers — the same row idiom Settings/Health use.
     private func moreTab(path: Binding<NavigationPath>, scrollSignal: Int) -> some View {
         NavigationStack(path: path) {
-            ScreenScaffold(title: "More", subtitle: "Everything else, one tap away",
-                           onRefresh: { await repo.refresh() },
-                           topBackground: liquidScaffoldSky()) {
+            ScrollView {
+              VStack(alignment: .leading, spacing: 24) {
+                Text("MORE").font(W.caps(15)).tracking(1.6).foregroundStyle(W.text)
+                    .frame(maxWidth: .infinity).padding(.top, 8)
                 moreSection("Classic screens") {
                     MoreRow("My settings", "slider.horizontal.3", .nathanSettings)
-                    MoreRow("Journal", "book.closed", .nathanJournal)
+                    MoreRow("Journal Impacts", "book.closed", .nathanJournal)
                     MoreRow("Trends", "chart.line.uptrend.xyaxis", .trends)
                     MoreRow("Classic Today", "square.grid.2x2", .classicToday)
                     MoreRow("Sleep details", "bed.double", .classicSleep)
@@ -523,7 +524,12 @@ struct RootTabView: View {
                     MoreRow("Power saving", "battery.25", .powerSaving)
                     MoreRow("Settings", "gearshape.fill", .settings)
                 }
+              }
+              .padding(.horizontal, W.margin)
+              .padding(.bottom, 40)
             }
+            .background(WBackground())
+            .refreshable { await repo.refresh() }
             // The rows push MoreDestination VALUES so a re-tap of the More tab can pop them off the
             // bound path (#135/#198). Each destination keeps the per-screen wrapper the rows used to
             // apply inline (surfaceBase background, inline title bar, hidden bar background):
@@ -567,7 +573,7 @@ struct RootTabView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Text(title).strandOverline()
+                    Text(title.uppercased()).font(W.caps(13)).tracking(1.4).foregroundStyle(W.text3)
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 11, weight: .semibold))
@@ -586,13 +592,11 @@ struct RootTabView: View {
                 // Zero internal padding so each MoreRow owns its own comfortable insets + height; the rows
                 // supply their own hairline separators (drawn at the bottom of every row but the last via the
                 // divider overlay) so the group reads as one continuous grouped list, matching Settings/Health.
-                NoopCard(padding: 0) {
-                    VStack(spacing: 0) { rows() }
-                        // Clip the rows column to the card's rounded shape so the last row's bottom hairline is
-                        // trimmed inside the corners (the card draws its surface in the BACKGROUND and doesn't
-                        // clip content itself, so without this the final divider would run past the rounded edge).
-                        .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
-                }
+                VStack(spacing: 0) { rows() }
+                    // Clip the rows column to the card's rounded shape so the last row's bottom hairline is
+                    // trimmed inside the corners.
+                    .background(W.row)
+                    .clipShape(RoundedRectangle(cornerRadius: W.cardRadius, style: .continuous))
             }
         }
     }
@@ -613,7 +617,7 @@ private enum MoreDestination: Hashable {
         switch self {
         case .trends:          TrendsView()
         case .nathanSettings:  NathanSettingsView()
-        case .nathanJournal:   InsightsView()
+        case .nathanJournal:   WJournalImpacts()
         case .classicToday:    TodayView()
         case .classicSleep:    SleepView()
         case .insightsHub:     InsightsHubView()
@@ -669,28 +673,28 @@ private struct MoreRow: View {
                 // its default blue a beat after first render — so the icons flashed green→blue (#184). The
                 // explicit foregroundStyle on the image overrides that; the title keeps the primary colour.
                 Image(systemName: icon)
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(StrandPalette.accent)
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundStyle(W.text2)
                     .frame(width: 26, alignment: .center)
                 Text(title)
-                    .font(StrandFont.body)
-                    .foregroundStyle(StrandPalette.textPrimary)
+                    .font(W.body(17))
+                    .foregroundStyle(W.text)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(StrandPalette.textTertiary)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(W.text3)
             }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 44)
+            .padding(.horizontal, 18)
+            .frame(minHeight: 56)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             // Hairline under every row; the grouped container clips the last one's overflow so the bottom
             // edge stays clean (the divider sits inside the card's rounded corners).
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(StrandPalette.hairline)
+                    .fill(W.hairline)
                     .frame(height: 1)
-                    .padding(.leading, 16)
+                    .padding(.leading, 58)
             }
         }
         .buttonStyle(.plain)

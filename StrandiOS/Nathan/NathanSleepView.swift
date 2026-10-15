@@ -71,7 +71,7 @@ struct NathanSleepView: View {
                 } else {
                     NathanCard {
                         Text("No sleep recorded yet. Wear the strap overnight, then open NOOP in the morning so it can sync.")
-                            .font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                            .font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
                     }
                 }
             }
@@ -92,8 +92,8 @@ struct NathanSleepView: View {
             roundButton("chevron.left", label: "Previous night", enabled: index + 1 < nights.count) { index += 1 }
             Spacer()
             VStack(spacing: 2) {
-                Text("Sleep").font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
-                Text(nightTitle).font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                Text("Sleep").font(.system(size: 20, weight: .heavy)).foregroundStyle(NathanStyle.text)
+                Text(nightTitle).font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
             }
             Spacer()
             roundButton("chevron.right", label: "Next night", enabled: index > 0) { index -= 1 }
@@ -130,16 +130,16 @@ struct NathanSleepView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "bed.double.fill").foregroundStyle(NathanStyle.sleepColor)
                         Text("Strap missed this night · from your sleep mat")
-                            .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                            .font(.system(size: 14, weight: .bold)).foregroundStyle(NathanStyle.text)
                     }
                     if let asleep = extAsleep[day], asleep > 0 {
                         Text(NathanFormat.hmLong(asleep) + " asleep")
-                            .font(.system(size: 26, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                            .font(.system(size: 26, weight: .heavy)).foregroundStyle(NathanStyle.text)
                     }
                     Text("\(NathanFormat.clock(Int(s))) → \(NathanFormat.clock(Int(e))) · \(NathanFormat.hmLong((e - s) / 60)) from first to last sleep")
-                        .font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                        .font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
                     Text("Wear the strap snug overnight so recovery and stages can be scored too.")
-                        .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                 }
             }
         }
@@ -159,10 +159,10 @@ struct NathanSleepView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 0) {
                             Text(p.map(NathanFormat.int) ?? "—").font(NathanStyle.number(34))
                                 .foregroundStyle(p == nil ? NathanStyle.text3 : color)
-                            if p != nil { Text("%").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(NathanStyle.text3) }
+                            if p != nil { Text("%").font(.system(size: 16, weight: .semibold)).foregroundStyle(NathanStyle.text3) }
                         }
                         Text(NathanStyle.sleepPerfLabel(p).uppercased())
-                            .font(.system(size: 10, weight: .bold, design: .rounded)).tracking(1).foregroundStyle(color)
+                            .font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(color)
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -170,13 +170,13 @@ struct NathanSleepView: View {
                     if let n, let asleep {
                         let short = asleep - n
                         Text(short < -10 ? "asleep · \(NathanFormat.hmLong(-short)) under need" : "asleep · need met")
-                            .font(.system(size: 13, design: .rounded))
+                            .font(.system(size: 13))
                             .foregroundStyle(short < -10 ? NathanStyle.bad : NathanStyle.good)
                     } else {
-                        Text("asleep").font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        Text("asleep").font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
                     }
                     Text("\(NathanFormat.clock(night.effectiveStartTs)) → \(NathanFormat.clock(night.endTs))")
-                        .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                        .font(.system(size: 13)).foregroundStyle(NathanStyle.text2)
                 }
             }
         }
@@ -214,7 +214,7 @@ struct NathanSleepView: View {
                     bigStat(value: st?.restorative, avg: avgRest, label: "RESTORATIVE SLEEP", color: NathanStyle.text)
                 }
                 if let line = insight(st: st, prior: prior) {
-                    Text(line).font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                    Text(line).font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if hr.count >= 4 {
@@ -225,10 +225,10 @@ struct NathanSleepView: View {
                         Spacer()
                         Text(NathanFormat.clock(night.endTs))
                     }
-                    .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(NathanStyle.text3)
                 } else {
                     Text("Not enough heart-rate data for this night yet.")
-                        .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        .font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
                 }
                 if let st {
                     HStack {
@@ -239,7 +239,7 @@ struct NathanSleepView: View {
                         Spacer()
                         Text("DURATION \(NathanFormat.hm(st.inBed))")
                     }
-                    .font(.system(size: 11, weight: .semibold, design: .rounded)).tracking(0.5)
+                    .font(.system(size: 11, weight: .semibold)).tracking(0.5)
                     .foregroundStyle(NathanStyle.text3)
                     VStack(spacing: 8) {
                         stageBar("AWAKE", minutes: st.awake, st: st, typical: typical(prior) { $0.pct($0.awake) }, color: StrandPalette.sleepAwake)
@@ -258,11 +258,11 @@ struct NathanSleepView: View {
                 Text(value.map(NathanFormat.hm) ?? "—").font(NathanStyle.number(34)).foregroundStyle(color)
                 if let value, let avg {
                     Text("\(value >= avg ? "▲" : "▼") \(NathanFormat.hm(avg))")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(value >= avg ? NathanStyle.good : NathanStyle.bad)
                 }
             }
-            Text(label).font(.system(size: 11, weight: .bold, design: .rounded)).tracking(0.5).foregroundStyle(NathanStyle.text3)
+            Text(label).font(.system(size: 11, weight: .bold)).tracking(0.5).foregroundStyle(NathanStyle.text3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -280,8 +280,8 @@ struct NathanSleepView: View {
         let pct = st.pct(minutes)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(name).font(.system(size: 12, weight: .bold, design: .rounded)).tracking(0.5).foregroundStyle(NathanStyle.text)
-                Text("\(Int(pct.rounded()))%").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(color)
+                Text(name).font(.system(size: 12, weight: .bold)).tracking(0.5).foregroundStyle(NathanStyle.text)
+                Text("\(Int(pct.rounded()))%").font(.system(size: 12, weight: .bold)).foregroundStyle(color)
                 Spacer()
                 Text(NathanFormat.hm(minutes)).font(NathanStyle.number(17)).foregroundStyle(NathanStyle.text)
             }

@@ -143,8 +143,21 @@ struct SendHealthDataIntent: AppIntent {
     @Parameter(title: "Sleep start") var sleepStart: String?
     @Parameter(title: "Sleep end") var sleepEnd: String?
 
+    /// MacroFactor's food log as Health hands it over: one entry per line ("512 kcal"); NOOP adds them up.
+    @Parameter(title: "Calories eaten") var caloriesEaten: String?
+    @Parameter(title: "Protein") var protein: String?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Send \(\.$weight), \(\.$bodyFat), \(\.$leanMass), sleep \(\.$sleepStart) to \(\.$sleepEnd) to NOOP")
+        Summary("Send \(\.$weight), \(\.$bodyFat), \(\.$leanMass), sleep \(\.$sleepStart) to \(\.$sleepEnd), food \(\.$caloriesEaten) and \(\.$protein) to NOOP")
+    }
+
+    /// Sum of every number in a Shortcuts list, one value per line. nil when there is none.
+    static func total(_ raw: String?) -> Double? {
+        guard let raw else { return nil }
+        let xs = raw.split(whereSeparator: \.isNewline).compactMap { ShortcutHealthImport.leadingNumber(String($0)) }
+        guard !xs.isEmpty else { return nil }
+        let t = xs.reduce(0, +)
+        return t > 0 ? t : nil
     }
 
     /// A Health sample turned into text loses its unit ("154.10…"), so a bare number follows the app's
@@ -232,6 +245,8 @@ struct SendHealthDataIntent: AppIntent {
             if pct > 1, pct < 70 { day.bodyFatPct = pct }
         }
         day.leanKg = Self.kilograms(leanMass)
+        day.dietaryKcal = Self.total(caloriesEaten)
+        day.proteinG = Self.total(protein)
         let nStarts = starts.count, nEnds = ends.count
         var sleepNote = "no sleep (both sleep fields were empty)"
         if let w = window {
@@ -272,6 +287,8 @@ struct SendHealthDataIntent: AppIntent {
             if let b = day.bodyFatPct { parts.append(String(format: "body fat %.1f%%", b)) }
             if let l = day.leanKg { parts.append(String(format: "lean %.1f lb", l * 2.2046226218)) }
             parts.append(sleepNote)
+            if let k = day.dietaryKcal { parts.append("ate \(Int(k.rounded())) kcal") }
+            if let p = day.proteinG { parts.append("\(Int(p.rounded())) g protein") }
             return .result(dialog: "Sent to NOOP: \(parts.joined(separator: ", ")).")
         case .nothingToImport:
             return .result(dialog: "Nothing new to import.")

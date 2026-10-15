@@ -51,7 +51,7 @@ struct NathanBodyView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("LAST \(range == .m1 ? "30 DAYS" : range == .m3 ? "3 MONTHS" : "6 MONTHS")")
                     .font(NathanStyle.label).tracking(0.8).foregroundStyle(NathanStyle.text3)
-                Text("Body").font(.system(size: 30, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                Text("Body").font(.system(size: 30, weight: .heavy)).foregroundStyle(NathanStyle.text)
             }
             Spacer()
             Picker("Range", selection: $range) {
@@ -95,12 +95,12 @@ struct NathanBodyView: View {
             HStack {
                 Text(label.uppercased()).font(NathanStyle.label).tracking(0.6).foregroundStyle(NathanStyle.text3)
                 Spacer()
-                Text(better == .up ? "goal ▲" : "goal ▼").font(.system(size: 11, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                Text(better == .up ? "goal ▲" : "goal ▼").font(.system(size: 11)).foregroundStyle(NathanStyle.text3)
             }
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(values.last.map(fmt) ?? "—").font(NathanStyle.number(30)).foregroundStyle(NathanStyle.text)
                     .lineLimit(1).minimumScaleFactor(0.6)
-                if values.last != nil { Text(unit).font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text3) }
+                if values.last != nil { Text(unit).font(.system(size: 14)).foregroundStyle(NathanStyle.text3) }
             }
             if values.count >= 2 {
                 Chart(values.indices.map { NathanPoint(x: $0, y: values[$0]) }) { p in
@@ -117,10 +117,10 @@ struct NathanBodyView: View {
                 .frame(height: 36)
             } else {
                 Text(values.isEmpty ? "No data yet" : "One reading so far")
-                    .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                     .frame(height: 36, alignment: .leading)
             }
-            Text(delta?.text ?? " ").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(color)
+            Text(delta?.text ?? " ").font(.system(size: 12, weight: .medium)).foregroundStyle(color)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -158,9 +158,9 @@ struct NathanBodyView: View {
         return NathanCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Lean mass vs fat mass").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                    Text("Lean mass vs fat mass").font(.system(size: 15, weight: .bold)).foregroundStyle(NathanStyle.text)
                     Spacer()
-                    Text(unit).font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    Text(unit).font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                 }
                 if Set(shown.map(\.date)).count >= 2 {
                     Chart(shown) { p in
@@ -190,7 +190,7 @@ struct NathanBodyView: View {
                     .frame(height: 200)
                 } else {
                     Text("Needs two scans with weight and body fat in this range.")
-                        .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        .font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
                 }
             }
         }
@@ -212,9 +212,9 @@ struct NathanBodyView: View {
             VStack(spacing: 0) {
                 HStack {
                     Text(latestDay.map { "Latest scan · \(NathanTodayView.shortDay($0))" } ?? "Latest scan")
-                        .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
+                        .font(.system(size: 15, weight: .bold)).foregroundStyle(NathanStyle.text)
                     Spacer()
-                    Text("vs \(range.rawValue) ago").font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                    Text("vs \(range.rawValue) ago").font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 14)
                 scanRow("Weight", w.map { mass($0.value) }, first(weight).map { mass($0.value) }, unit, .neither)
@@ -223,7 +223,7 @@ struct NathanBodyView: View {
                 scanRow("Body fat mass", fatMass, fatMassStart, unit, .down)
                 if w == nil && bf == nil && lm == nil {
                     Text("No scans yet. In the InBody app turn on Apple Health sharing, then allow NOOP to read Health under More → Apple Health.")
-                        .font(.system(size: 13, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                        .font(.system(size: 13)).foregroundStyle(NathanStyle.text3)
                         .padding(16)
                 }
             }
@@ -236,11 +236,11 @@ struct NathanBodyView: View {
         return VStack(spacing: 0) {
             Divider().overlay(NathanStyle.line)
             HStack {
-                Text(name).font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                Text(name).font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
                 Spacer()
                 Text(value.map { NathanFormat.one($0) + (unit == "%" ? "%" : " \(unit)") } ?? "—")
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
-                Text(d?.text ?? "—").font(.system(size: 13, design: .rounded))
+                    .font(.system(size: 14, weight: .bold)).foregroundStyle(NathanStyle.text)
+                Text(d?.text ?? "—").font(.system(size: 13))
                     .foregroundStyle(d?.color ?? NathanStyle.text3).frame(width: 64, alignment: .trailing)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
@@ -271,6 +271,7 @@ struct NathanProgressPhotos: View {
     @State private var photos: [Photo] = []
     @State private var picked: PhotosPickerItem?
     @State private var comparing: Photo?
+    @State private var showCamera = false
 
     static var folder: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -282,20 +283,29 @@ struct NathanProgressPhotos: View {
             NathanSectionHeader(title: "Progress photos", trailing: photos.count >= 2 ? "Tap a photo to compare" : nil)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    PhotosPicker(selection: $picked, matching: .images) {
-                        VStack(spacing: 8) {
-                            Image(systemName: "camera").font(.system(size: 24))
-                            Text("Add photo").font(.system(size: 13, weight: .semibold, design: .rounded))
+                    VStack(spacing: 8) {
+                        // Tap opens the camera straight away; the library stays one tap below it.
+                        Button { showCamera = true } label: {
+                            VStack(spacing: 8) {
+                                Image(systemName: "camera").font(.system(size: 24))
+                                Text("Take photo").font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundStyle(NathanStyle.text2)
+                            .frame(width: 104, height: 112)
+                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NathanStyle.text3, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
                         }
-                        .foregroundStyle(NathanStyle.text2)
-                        .frame(width: 104, height: 150)
-                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NathanStyle.text3, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+                        .buttonStyle(.plain)
+                        PhotosPicker(selection: $picked, matching: .images) {
+                            Text("From library").font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(NathanStyle.text3)
+                                .frame(width: 104, height: 30)
+                        }
                     }
                     ForEach(photos) { p in
                         Button { comparing = p } label: {
                             VStack(spacing: 6) {
                                 thumb(p).frame(width: 104, height: 150).clipShape(RoundedRectangle(cornerRadius: 14))
-                                Text(caption(p)).font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                                Text(caption(p)).font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
                             }
                         }
                         .buttonStyle(.plain)
@@ -306,7 +316,7 @@ struct NathanProgressPhotos: View {
                 }
             }
             Text("Photos stay on this phone, inside NOOP. Long-press a photo to delete it.")
-                .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
+                .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
         }
         .task { reload() }
         .onChange(of: picked) { _, item in
@@ -315,6 +325,10 @@ struct NathanProgressPhotos: View {
         }
         .sheet(item: $comparing) { p in
             NathanPhotoCompare(older: p, newer: photos.first ?? p, caption: caption)
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            WCameraPicker { img in store(img) }
+                .ignoresSafeArea()
         }
     }
 
@@ -346,8 +360,12 @@ struct NathanProgressPhotos: View {
     private func save(_ item: PhotosPickerItem) async {
         defer { picked = nil }
         guard let data = try? await item.loadTransferable(type: Data.self),
-              let img = UIImage(data: data),
-              let jpg = img.jpegData(compressionQuality: 0.85) else { return }
+              let img = UIImage(data: data) else { return }
+        store(img)
+    }
+
+    private func store(_ img: UIImage) {
+        guard let jpg = img.jpegData(compressionQuality: 0.85) else { return }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd_HHmmss"
         let url = Self.folder.appendingPathComponent("front_\(f.string(from: Date())).jpg")
         try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
@@ -370,7 +388,7 @@ struct NathanPhotoCompare: View {
     var body: some View {
         VStack(spacing: 16) {
             HStack {
-                Text("Compare").font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                Text("Compare").font(.system(size: 20, weight: .heavy)).foregroundStyle(NathanStyle.text)
                 Spacer()
                 Button("Done") { dismiss() }.foregroundStyle(NathanStyle.accent)
             }
@@ -389,8 +407,40 @@ struct NathanPhotoCompare: View {
             if let img = UIImage(contentsOfFile: p.url.path) {
                 Image(uiImage: img).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 14))
             }
-            Text(caption(p)).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(NathanStyle.text2)
+            Text(caption(p)).font(.system(size: 13, weight: .semibold)).foregroundStyle(NathanStyle.text2)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// The system camera, full screen. Hands back the captured photo; cancel just closes it. Falls back to
+/// the photo library on a device without a camera (the simulator).
+struct WCameraPicker: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let p = UIImagePickerController()
+        p.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        if p.sourceType == .camera { p.cameraDevice = .rear }
+        p.delegate = context.coordinator
+        return p
+    }
+
+    func updateUIViewController(_ vc: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: WCameraPicker
+        init(_ parent: WCameraPicker) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let img = info[.originalImage] as? UIImage { parent.onImage(img) }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
     }
 }

@@ -29,7 +29,7 @@ struct WRouteDestinations: ViewModifier {
                     NathanActivityDetail(workout: w).wPage(title: "Activity")
                 }
             case .journal:
-                InsightsHubView().wPage(title: "Journal Impacts")
+                WJournalImpacts()
             }
         }
     }

@@ -25,10 +25,10 @@ struct NathanMorningJournal: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: NathanStyle.sectionGap) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Good morning").font(.system(size: 30, weight: .heavy, design: .rounded))
+                        Text("Good morning").font(.system(size: 30, weight: .heavy))
                             .foregroundStyle(NathanStyle.text)
                         Text("Log what you did yesterday. Over a few weeks NOOP learns which habits raise or lower your recovery and sleep.")
-                            .font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
+                            .font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
                     }
                     JournalLogCard(importedQuestions: importedQuestions, answers: answers,
                                    numericAnswers: numeric, dayOffset: $dayOffset,
@@ -36,7 +36,7 @@ struct NathanMorningJournal: View {
                     NavigationLink { InsightsHubView() } label: {
                         HStack {
                             Image(systemName: "wand.and.sparkles")
-                            Text("See what moves your recovery").font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("See what moves your recovery").font(.system(size: 15, weight: .semibold))
                             Spacer()
                             Image(systemName: "chevron.right")
                         }
