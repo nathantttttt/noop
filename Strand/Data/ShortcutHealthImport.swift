@@ -191,14 +191,50 @@ enum ShortcutHealthImport {
         d.avgHr      = field(f, 6).flatMap { Int($0) }
         d.asleepMin  = field(f, 7).flatMap { Double($0) }
         d.vo2max     = field(f, 8).flatMap { Double($0) }
-        d.weightKg   = field(f, 9).flatMap { Double($0) }
-        // Body fat arrives as a percent (21.3) or a fraction (0.213) depending on how the Shortcut reads it.
-        d.bodyFatPct = field(f, 10).flatMap { Double($0) }.map { $0 <= 1 ? $0 * 100 : $0 }
-        d.leanKg     = field(f, 11).flatMap { Double($0) }
-        if let s = field(f, 12).flatMap({ Int($0) }), let e = field(f, 13).flatMap({ Int($0) }), e > s {
+        d.weightKg   = field(f, 9).flatMap { Double($0) ?? massKg($0) }
+        // Body fat arrives as a percent (21.3 / "21.3%") or a fraction (0.213) depending on how the
+        // Shortcut reads it.
+        d.bodyFatPct = field(f, 10).flatMap { leadingNumber($0) }.map { $0 <= 1 ? $0 * 100 : $0 }
+        d.leanKg     = field(f, 11).flatMap { Double($0) ?? massKg($0) }
+        if let s = field(f, 12).flatMap({ epochSeconds($0) }), let e = field(f, 13).flatMap({ epochSeconds($0) }), e > s {
             d.sleepStartTs = s; d.sleepEndTs = e
         }
         return d.hasAnyMetric ? d : nil
+    }
+
+    /// The first number in a field ("180.4 lb" → 180.4, "21,3 %" → 21.3), tolerating a decimal comma.
+    static func leadingNumber(_ s: String) -> Double? {
+        var out = ""
+        var seenDigit = false
+        for ch in s.replacingOccurrences(of: ",", with: ".") {
+            if ch.isNumber || (ch == "." && !out.contains(".")) || (ch == "-" && out.isEmpty) {
+                out.append(ch); if ch.isNumber { seenDigit = true }
+            } else if seenDigit { break }
+        }
+        return seenDigit ? Double(out) : nil
+    }
+
+    /// A mass with its unit as Shortcuts prints a Health sample ("180.4 lb", "81.8 kg"), in kilograms.
+    static func massKg(_ s: String) -> Double? {
+        guard let v = leadingNumber(s) else { return nil }
+        let lower = s.lowercased()
+        if lower.contains("lb") || lower.contains("pound") { return v / 2.2046226218 }
+        if lower.contains("st") && !lower.contains("kg") { return v * 6.35029318 }
+        return v
+    }
+
+    /// Unix seconds, or a date as Shortcuts formats one (ISO 8601 with offset, or "yyyy-MM-dd HH:mm").
+    static func epochSeconds(_ s: String) -> Int? {
+        if let n = Int(s) { return n }
+        let iso = ISO8601DateFormatter()
+        if let d = iso.date(from: s) { return Int(d.timeIntervalSince1970) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        for pattern in ["yyyy-MM-dd'T'HH:mm:ssZZZZZ", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm"] {
+            f.dateFormat = pattern
+            if let d = f.date(from: s) { return Int(d.timeIntervalSince1970) }
+        }
+        return nil
     }
 
     private static func parseWorkout(_ f: [String]) -> ParsedWorkout? {
