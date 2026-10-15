@@ -125,6 +125,86 @@ struct AskCoachIntent: AppIntent {
     }
 }
 
+/// "Send Health Data to NOOP": the fill-in-the-blanks Shortcuts action for a sideloaded build with no
+/// HealthKit entitlement. The user's Shortcut finds the scale and sleep-mat samples in Health and drops
+/// them into these fields; NOOP files them under the `apple-health` source exactly as the
+/// `noop://import-health` link does, minus the text line, base64 and URL the link needs.
+struct SendHealthDataIntent: AppIntent {
+    static var title: LocalizedStringResource = "Send Health Data to NOOP"
+    static var description = IntentDescription("Import weight, body fat, lean mass and last night's sleep window from Apple Health into NOOP. Leave any field empty to skip it.")
+    static var openAppWhenRun = false
+
+    @Parameter(title: "Weight") var weight: String?
+    @Parameter(title: "Body fat") var bodyFat: String?
+    @Parameter(title: "Lean mass") var leanMass: String?
+    @Parameter(title: "Sleep start") var sleepStart: Date?
+    @Parameter(title: "Sleep end") var sleepEnd: Date?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Send \(\.$weight), \(\.$bodyFat), \(\.$leanMass), sleep \(\.$sleepStart) to \(\.$sleepEnd) to NOOP")
+    }
+
+    /// A Health sample turned into text loses its unit ("154.10…"), so a bare number follows the app's
+    /// unit setting; an explicit "kg"/"lb" wins.
+    static func kilograms(_ raw: String?) -> Double? {
+        guard let s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty,
+              let v = ShortcutHealthImport.leadingNumber(s), v > 0 else { return nil }
+        let lower = s.lowercased()
+        if lower.contains("kg") { return v }
+        if lower.contains("lb") || lower.contains("pound") { return v / 2.2046226218 }
+        let imperial = (UserDefaults.standard.string(forKey: UnitPrefs.systemKey) ?? "imperial") == UnitSystem.imperial.rawValue
+        return imperial ? v / 2.2046226218 : v
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        var day = ShortcutHealthImport.ParsedDay(day: Repository.localDayKey(sleepEnd ?? Date()))
+        day.weightKg = Self.kilograms(weight)
+        if let s = bodyFat?.trimmingCharacters(in: .whitespacesAndNewlines), let v = ShortcutHealthImport.leadingNumber(s) {
+            let pct = v <= 1 ? v * 100 : v
+            if pct > 1, pct < 70 { day.bodyFatPct = pct }
+        }
+        day.leanKg = Self.kilograms(leanMass)
+        var sleepNote = "no sleep"
+        if let s = sleepStart, let e = sleepEnd, e > s, e.timeIntervalSince(s) < 20 * 3600 {
+            day.sleepStartTs = Int(s.timeIntervalSince1970)
+            day.sleepEndTs = Int(e.timeIntervalSince1970)
+            let f = DateFormatter(); f.dateFormat = "h:mm a"
+            sleepNote = "sleep \(f.string(from: s))–\(f.string(from: e))"
+        } else if sleepStart != nil || sleepEnd != nil {
+            sleepNote = "sleep skipped (needs both a start and an end)"
+        }
+        guard day.hasAnyMetric else {
+            return .result(dialog: "Nothing to send: every field was empty. Check that Health has a weight or sleep reading in the range your Find steps use.")
+        }
+
+        // A cold launch can hand the intent its first tick before the model exists.
+        var model = AppModel.shared
+        for _ in 0..<8 where model == nil {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            model = AppModel.shared
+        }
+        guard let model else {
+            return .result(dialog: "NOOP didn't start in time. Open NOOP once, then run the shortcut again.")
+        }
+        let pending = ShortcutHealthImport.PendingImport(
+            text: "intent", parsed: ShortcutHealthImport.Parsed(days: [day], workouts: []))
+        switch await model.importFromShortcutAction(pending) {
+        case .imported:
+            var parts: [String] = []
+            if let w = day.weightKg { parts.append(String(format: "weight %.1f lb", w * 2.2046226218)) }
+            if let b = day.bodyFatPct { parts.append(String(format: "body fat %.1f%%", b)) }
+            if let l = day.leanKg { parts.append(String(format: "lean %.1f lb", l * 2.2046226218)) }
+            parts.append(sleepNote)
+            return .result(dialog: "Sent to NOOP: \(parts.joined(separator: ", ")).")
+        case .nothingToImport:
+            return .result(dialog: "Nothing new to import.")
+        case .rejected(let reason):
+            return .result(dialog: "NOOP couldn't import it: \(reason)")
+        }
+    }
+}
+
 /// Surfaces NOOP's intents to Siri, Spotlight, and the Shortcuts gallery without any user setup.
 struct NOOPShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {

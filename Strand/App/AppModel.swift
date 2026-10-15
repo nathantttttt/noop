@@ -2650,6 +2650,19 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The "Send Health Data to NOOP" Shortcuts action. Unlike the URL scheme this is only reachable
+    /// from the user's own Shortcut (not a forgeable link), so it writes without the confirm alert.
+    func importFromShortcutAction(_ pending: ShortcutHealthImport.PendingImport) async -> ShortcutHealthImport.Outcome {
+        beginImport(.appleHealth)
+        guard let store = await repo.storeHandle() else {
+            finishImport(.appleHealth, summary: "Couldn't open the local store.", failed: true)
+            return .rejected("Couldn't open NOOP's local store.")
+        }
+        let outcome = await ShortcutHealthImport.ingest(prepared: pending, into: store)
+        await finishShortcutHealthImport(outcome)
+        return outcome
+    }
+
     private func finishShortcutHealthImport(_ outcome: ShortcutHealthImport.Outcome) async {
         switch outcome {
         case .imported(let days, let workouts):
