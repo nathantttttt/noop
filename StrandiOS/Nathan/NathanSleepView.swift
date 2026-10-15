@@ -19,6 +19,7 @@ struct NathanSleepView: View {
     @State private var hr: [NathanHRPoint] = []
     @State private var extStart: [String: Double] = [:]
     @State private var extEnd: [String: Double] = [:]
+    @State private var extAsleep: [String: Double] = [:]
 
     /// Newest first, one night per wake day (the dashboard's own merge).
     private var nights: [CachedSleepSession] { repo.sleeps.sorted { $0.endTs > $1.endTs } }
@@ -131,7 +132,11 @@ struct NathanSleepView: View {
                         Text("Strap missed this night · from your sleep mat")
                             .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(NathanStyle.text)
                     }
-                    Text("\(NathanFormat.clock(Int(s))) → \(NathanFormat.clock(Int(e))) · \(NathanFormat.hmLong((e - s) / 60)) in bed")
+                    if let asleep = extAsleep[day], asleep > 0 {
+                        Text(NathanFormat.hmLong(asleep) + " asleep")
+                            .font(.system(size: 26, weight: .heavy, design: .rounded)).foregroundStyle(NathanStyle.text)
+                    }
+                    Text("\(NathanFormat.clock(Int(s))) → \(NathanFormat.clock(Int(e))) · \(NathanFormat.hmLong((e - s) / 60)) from first to last sleep")
                         .font(.system(size: 14, design: .rounded)).foregroundStyle(NathanStyle.text2)
                     Text("Wear the strap snug overnight so recovery and stages can be scored too.")
                         .font(.system(size: 12, design: .rounded)).foregroundStyle(NathanStyle.text3)
@@ -382,6 +387,7 @@ struct NathanSleepView: View {
         debt = dict(await repo.exploreSeries(key: "sleep_debt_min", source: "my-whoop", days: 120))
         extStart = dict(await repo.series(key: "ext_sleep_start", source: "apple-health", days: 14))
         extEnd = dict(await repo.series(key: "ext_sleep_end", source: "apple-health", days: 14))
+        extAsleep = dict(await repo.series(key: "asleep_min", source: "apple-health", days: 14))
     }
 
     private func loadHeartRate() async {

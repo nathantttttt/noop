@@ -186,7 +186,7 @@ struct SendHealthDataIntent: AppIntent {
 
     /// The main sleep block from a mat's stage samples: pair starts with ends, merge samples less than 90
     /// minutes apart, keep the longest block (so a nap or a stray sample does not stretch the night).
-    static func sleepWindow(starts: [Date], ends: [Date]) -> (start: Date, end: Date)? {
+    static func sleepWindow(starts: [Date], ends: [Date]) -> (start: Date, end: Date, asleepMin: Double?)? {
         guard !starts.isEmpty, !ends.isEmpty else { return nil }
         var spans: [(Date, Date)]
         if starts.count == ends.count {
@@ -205,7 +205,20 @@ struct SendHealthDataIntent: AppIntent {
         }
         guard let best = blocks.max(by: { $0.1.timeIntervalSince($0.0) < $1.1.timeIntervalSince($1.0) }),
               best.1.timeIntervalSince(best.0) >= 30 * 60, best.1.timeIntervalSince(best.0) < 20 * 3600 else { return nil }
-        return (start: best.0, end: best.1)
+        // Time asleep = the union of the samples inside the block, so the short wakes between stages drop
+        // out. Only meaningful when the samples are real start/end pairs (the Shortcut filters out Awake
+        // and In Bed); an unpaired list gives no figure rather than a wrong one.
+        var asleep: Double? = nil
+        if starts.count == ends.count {
+            var total: TimeInterval = 0
+            var cursor = best.0
+            for sp in spans where sp.1 > best.0 && sp.0 < best.1 {
+                let a = max(sp.0, cursor), b = min(sp.1, best.1)
+                if b > a { total += b.timeIntervalSince(a); cursor = b }
+            }
+            asleep = total / 60
+        }
+        return (start: best.0, end: best.1, asleepMin: asleep)
     }
 
     @MainActor
@@ -224,8 +237,10 @@ struct SendHealthDataIntent: AppIntent {
         if let w = window {
             day.sleepStartTs = Int(w.start.timeIntervalSince1970)
             day.sleepEndTs = Int(w.end.timeIntervalSince1970)
+            day.asleepMin = w.asleepMin
             let f = DateFormatter(); f.dateFormat = "h:mm a"
             sleepNote = "sleep \(f.string(from: w.start))–\(f.string(from: w.end))"
+            if let m = w.asleepMin { sleepNote += " (\(Int(m) / 60)h \(String(format: "%02ld", Int(m) % 60))m asleep)" }
         } else if nStarts == 0 && nEnds > 0 {
             sleepNote = "sleep skipped: Sleep start was empty"
         } else if nEnds == 0 && nStarts > 0 {
