@@ -37,11 +37,11 @@ struct WTrendView: View {
             VStack(alignment: .leading, spacing: 22) {
                 selector
                 HStack(alignment: .top, spacing: 12) {
-                    averageBlock
+                    averageBlock.layoutPriority(1)
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: 14) {
                         WSegmented(options: WPeriod.allCases.map { ($0, $0.label) }, selection: $period)
-                            .frame(width: 266)
+                            .frame(width: 196)
                         rangeNav
                     }
                 }
@@ -97,7 +97,9 @@ struct WTrendView: View {
                 Text("AVERAGE").font(W.caps(14, .semibold)).tracking(1.4).foregroundStyle(W.text2)
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(avg.map(display) ?? "---").font(W.num(46)).foregroundStyle(W.text)
-                    Text(metric.unit).font(W.body(22, .medium)).foregroundStyle(W.text)
+                        .lineLimit(1).minimumScaleFactor(0.5)
+                    Text(metric.unit).font(W.body(metric.unit.count > 3 ? 17 : 22, .medium)).foregroundStyle(W.text)
+                        .lineLimit(1).fixedSize()
                 }
                 pill(current: avg, prior: priorAvg)
             }
@@ -144,7 +146,7 @@ struct WTrendView: View {
             Button { WHaptics.select(); back += 1 } label: {
                 Image(systemName: "chevron.left").font(.system(size: 19, weight: .bold)).foregroundStyle(W.text)
             }
-            Text(rangeText).font(W.caps(15)).tracking(1.2).foregroundStyle(W.text).lineLimit(1).minimumScaleFactor(0.7)
+            Text(rangeText).font(W.caps(13)).tracking(0.8).foregroundStyle(W.text).lineLimit(1).minimumScaleFactor(0.6)
             Button { WHaptics.select(); back = max(0, back - 1) } label: {
                 Image(systemName: "chevron.right").font(.system(size: 19, weight: .bold))
                     .foregroundStyle(back == 0 ? W.text3.opacity(0.6) : W.text)

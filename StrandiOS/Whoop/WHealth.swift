@@ -65,6 +65,8 @@ struct WAgeResult {
         let factor: WAgeFactor
         let sixMonth: Double?
         let thirtyDay: Double?
+        /// What's still missing before this marker counts ("3 of 7 days"); nil once it counts.
+        var calibrating: String? = nil
         var id: String { factor.id }
         var years: Double? { sixMonth.map(factor.years) }
     }
@@ -80,13 +82,26 @@ struct WAgeResult {
         }.reduce(0, +)
         return max(-1, min(3, 1 + change * 2))
     }
-    var hasData: Bool { rows.contains { $0.sixMonth != nil } }
+    var ready: Int { rows.filter { $0.sixMonth != nil }.count }
+    /// NOOP Age shows once at least three of the nine markers have enough data.
+    var hasData: Bool { ready >= 3 }
 }
 
 extension WhoopData {
     func ageResult(chronologicalAge: Int) -> WAgeResult {
         let end = Date()
+        let worn6 = window(.strain, end: end, days: 182).filter { $0.value != nil }.count
+        let worn30 = window(.strain, end: end, days: 30).filter { $0.value != nil }.count
+        func count(_ f: WAgeFactor) -> Int { window(f.metric, end: end, days: 182).filter { $0.value != nil }.count }
+        func need(_ f: WAgeFactor) -> String? {
+            if f.id == "lean" { return latestLeanPct == nil && count(f) == 0 ? "Needs one scan with weight and lean mass" : nil }
+            if f.id == "vo2" { return count(f) == 0 ? "Needs 4 of 7 nights of resting HR, plus your age and sex in Settings" : nil }
+            if f.weekly { return worn6 < 14 ? "\(worn6) of 14 days of wear" : nil }
+            let n = count(f)
+            return n < 7 ? "\(n) of 7 days of data" : nil
+        }
         func avg(_ f: WAgeFactor, days: Int) -> Double? {
+            if need(f) != nil { return nil }
             if f.id == "lean" {
                 let w = window(.weight, end: end, days: days), l = window(.leanMass, end: end, days: days)
                 let pairs = zip(w, l).compactMap { a, b -> Double? in
@@ -96,14 +111,16 @@ extension WhoopData {
                 return pairs.isEmpty ? latestLeanPct : pairs.reduce(0, +) / Double(pairs.count)
             }
             if f.weekly {
-                let xs = window(f.metric, end: end, days: days).compactMap(\.value)
-                guard !xs.isEmpty else { return nil }
-                return xs.reduce(0, +) / (Double(days) / 7)
+                // Sum over the days the strap was worn, per worn week (a missing workout is a real zero).
+                let worn = days >= 182 ? worn6 : worn30
+                guard worn >= 7 else { return nil }
+                let total = window(f.metric, end: end, days: days).compactMap(\.value).reduce(0, +)
+                return total / (Double(worn) / 7)
             }
             return mean(f.metric, end: end, days: days)
         }
         let rows = WAgeFactor.all.map { f in
-            WAgeResult.Row(factor: f, sixMonth: avg(f, days: 182), thirtyDay: avg(f, days: 30))
+            WAgeResult.Row(factor: f, sixMonth: avg(f, days: 182), thirtyDay: avg(f, days: 30), calibrating: need(f))
         }
         return WAgeResult(chronological: Double(chronologicalAge), rows: rows)
     }
@@ -125,6 +142,12 @@ extension WhoopData {
     }
 
     static let vitals: [WMetric] = [.respRate, .spo2, .rhr, .hrv, .skinTemp]
+
+    /// Nights of this vital banked in the last 30, for the "calibrating" note (a normal range needs 7).
+    func vitalNights(_ m: WMetric) -> Int {
+        window(m, end: Date(), days: 30).filter { $0.value != nil }.count
+    }
+    static let rangeNights = 7
 }
 
 // MARK: - Health tab
@@ -134,6 +157,9 @@ struct WHealthTab: View {
     @EnvironmentObject var data: WhoopData
     @EnvironmentObject var profile: ProfileStore
     @State private var showCoach = false
+    @State private var scrollY: CGFloat = 0
+
+    private var morph: CGFloat { min(1, max(0, (scrollY - 60) / 160)) }
 
     var body: some View {
         let age = data.ageResult(chronologicalAge: profile.age)
@@ -142,8 +168,16 @@ struct WHealthTab: View {
                 Text("HEALTH").font(W.caps(15)).tracking(1.6).foregroundStyle(W.text)
                     .frame(maxWidth: .infinity).padding(.top, 8)
                 NavigationLink(value: WRoute.healthspan) {
-                    WAgeOrb(age: age.hasData ? age.age : nil, delta: age.hasData ? age.delta : nil, size: 290)
-                        .frame(maxWidth: .infinity)
+                    VStack(spacing: 6) {
+                        WAgeOrb(age: age.hasData ? age.age : nil, delta: age.hasData ? age.delta : nil, size: 290)
+                        if !age.hasData {
+                            Text("Calibrating · \(age.ready) of 3 markers ready. Tap to see what each needs.")
+                                .font(W.body(14)).foregroundStyle(W.text3).multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .scaleEffect(1 - 0.45 * morph, anchor: .top)
+                    .opacity(Double(1 - morph))
                 }
                 .buttonStyle(.plain)
                 paceCard(age)
@@ -155,9 +189,11 @@ struct WHealthTab: View {
             .padding(.horizontal, W.margin)
             .padding(.bottom, 80)
         }
+        .modifier(WScrollTracker(y: $scrollY))
         .background(WBackground().overlay(
             RadialGradient(colors: [W.hex(0x6A4E1E, 0.55), .clear], center: .top, startRadius: 10, endRadius: 460)
                 .ignoresSafeArea()))
+        .overlay(alignment: .top) { WAgePinnedHeader(age: age, morph: morph) }
         .refreshable { await repo.refresh() }
         .overlay(alignment: .bottomTrailing) { WCoachButton { showCoach = true }.padding(.trailing, 16).padding(.bottom, 10) }
         .sheet(isPresented: $showCoach) { WCoachSheet() }
@@ -297,24 +333,26 @@ struct WHealthspanView: View {
     @EnvironmentObject var data: WhoopData
     @EnvironmentObject var profile: ProfileStore
     @State private var open: Set<String> = []
+    @State private var scrollY: CGFloat = 0
+
+    private var morph: CGFloat { min(1, max(0, (scrollY - 40) / 160)) }
 
     var body: some View {
         let age = data.ageResult(chronologicalAge: profile.age)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center) {
-                    VStack(spacing: 2) {
-                        Text(age.hasData ? WFmt.one(abs(age.delta)) : "--").font(W.num(24)).foregroundStyle(W.gold)
-                        Text(age.delta >= 0 ? "YEARS OLDER" : "YEARS YOUNGER").font(W.caps(12)).tracking(1.3).foregroundStyle(W.text2)
+                VStack(spacing: 14) {
+                    WAgeOrb(age: age.hasData ? age.age : nil, delta: age.hasData ? age.delta : nil, size: 260)
+                    if age.hasData {
+                        Text("PACE OF AGING  \(String(format: "%.1fx", age.pace))").font(W.caps(14)).tracking(1.4).foregroundStyle(W.text2)
+                    } else {
+                        Text("Calibrating · \(age.ready) of 3 markers ready. Each marker below says what it still needs.")
+                            .font(W.body(14)).foregroundStyle(W.text3).multilineTextAlignment(.center)
                     }
-                    .frame(maxWidth: .infinity)
-                    WAgeOrb(age: age.hasData ? age.age : nil, delta: nil, size: 150, compact: true)
-                    VStack(spacing: 2) {
-                        Text(age.hasData ? String(format: "%.1fx", age.pace) : "--").font(W.num(24)).foregroundStyle(W.text)
-                        Text("PACE OF AGING").font(W.caps(12)).tracking(1.3).foregroundStyle(W.text2)
-                    }
-                    .frame(maxWidth: .infinity)
                 }
+                .frame(maxWidth: .infinity)
+                .scaleEffect(1 - 0.45 * morph, anchor: .top)
+                .opacity(Double(1 - morph))
                 ForEach([WAgeFactor.Section.sleep, .strain, .fitness], id: \.self) { sec in
                     HStack(alignment: .lastTextBaseline) {
                         Text(sec.rawValue).font(W.title(26)).foregroundStyle(W.text)
@@ -346,6 +384,8 @@ struct WHealthspanView: View {
             .padding(.horizontal, W.margin)
             .padding(.bottom, 40)
         }
+        .modifier(WScrollTracker(y: $scrollY))
+        .overlay(alignment: .top) { WAgePinnedHeader(age: age, morph: morph) }
         .wPage(title: "Healthspan")
     }
 
@@ -389,6 +429,13 @@ struct WHealthspanView: View {
                     Text("years").font(W.body(15)).foregroundStyle(W.text3)
                 }
                 .frame(width: 64, alignment: .trailing)
+            }
+            if let c = r.calibrating {
+                HStack(spacing: 6) {
+                    Image(systemName: "hourglass").font(.system(size: 12))
+                    Text("Calibrating · \(c)").font(W.body(14))
+                }
+                .foregroundStyle(W.text3)
             }
             if isOpen {
                 Text(advice(r)).font(W.body(16)).foregroundStyle(W.text2).fixedSize(horizontal: false, vertical: true)
@@ -507,7 +554,9 @@ struct WHealthMonitorCard: View {
                 }
                 HStack(spacing: 10) {
                     WStatusSquare(ok: known.isEmpty ? nil : out == 0)
-                    Text(known.isEmpty ? "No data" : out == 0 ? "All metrics within range" : "\(out) metric\(out == 1 ? "" : "s") out of range")
+                    Text(known.isEmpty
+                         ? (data.vitalNights(.rhr) == 0 ? "No data" : "Calibrating your normal ranges · \(min(data.vitalNights(.rhr), 6)) of 7 nights")
+                         : out == 0 ? "All metrics within range" : "\(out) metric\(out == 1 ? "" : "s") out of range")
                         .font(W.body(16)).foregroundStyle(W.text)
                     Spacer()
                 }
@@ -521,6 +570,10 @@ struct WHealthMonitorCard: View {
 /// The small Home tile.
 struct WHealthMonitorTile: View {
     @EnvironmentObject var data: WhoopData
+    private var calibratingText: String {
+        let n = data.vitalNights(.rhr)
+        return n == 0 ? "No data" : "Calibrating · \(min(n, 6))/7"
+    }
     var body: some View {
         let known = WhoopData.vitals.compactMap { data.vitalInRange($0) }
         let out = known.filter { !$0 }.count
@@ -532,8 +585,8 @@ struct WHealthMonitorTile: View {
             }
             HStack(spacing: 8) {
                 WStatusSquare(ok: known.isEmpty ? nil : out == 0, size: 22)
-                Text(known.isEmpty ? "No data" : out == 0 ? "Within range" : "\(out) out of range")
-                    .font(W.body(15, .semibold)).foregroundStyle(W.text).lineLimit(1).minimumScaleFactor(0.8)
+                Text(known.isEmpty ? calibratingText : out == 0 ? "Within range" : "\(out) out of range")
+                    .font(W.body(15, .semibold)).foregroundStyle(W.text).lineLimit(1).minimumScaleFactor(0.7)
             }
         }
         .padding(14)
@@ -610,7 +663,8 @@ struct WHealthMonitorView: View {
             }
             HStack(spacing: 6) {
                 Circle().fill(ok == nil ? W.text3 : (ok! ? W.mint : W.orange)).frame(width: 7, height: 7)
-                Text(ok == nil ? "No data" : (ok! ? "Within range" : "Out of range")).font(W.body(14, .semibold))
+                Text(ok == nil ? (l == nil ? "No data" : "Calibrating · \(min(data.vitalNights(m), 6))/7 nights") : (ok! ? "Within range" : "Out of range"))
+                    .font(W.body(14, .semibold)).lineLimit(1).minimumScaleFactor(0.7)
             }
             .foregroundStyle(W.text)
             .padding(.horizontal, 8).padding(.vertical, 5)
@@ -820,5 +874,37 @@ struct WStressGauge: View {
         var p = Path()
         p.addArc(center: c, radius: r, startAngle: .radians(.pi + .pi * from), endAngle: .radians(.pi + .pi * to), clockwise: false)
         return p
+    }
+}
+
+
+/// The pinned header that takes over from the big orb on scroll: years older · small orb · pace.
+struct WAgePinnedHeader: View {
+    let age: WAgeResult
+    let morph: CGFloat
+
+    var body: some View {
+        HStack(alignment: .center) {
+            VStack(spacing: 2) {
+                Text(age.hasData ? WFmt.one(abs(age.delta)) : "--").font(W.num(22)).foregroundStyle(W.gold)
+                Text(age.delta >= 0 ? "YEARS OLDER" : "YEARS YOUNGER").font(W.caps(11)).tracking(1.2).foregroundStyle(W.text2)
+            }
+            .frame(maxWidth: .infinity)
+            WAgeOrb(age: age.hasData ? age.age : nil, delta: nil, size: 104, compact: true)
+            VStack(spacing: 2) {
+                Text(age.hasData ? String(format: "%.1fx", age.pace) : "--").font(W.num(22)).foregroundStyle(W.text)
+                Text("PACE OF AGING").font(W.caps(11)).tracking(1.2).foregroundStyle(W.text2)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, W.margin)
+        .padding(.bottom, 8)
+        .background(
+            LinearGradient(colors: [W.bgTop, W.bgTop.opacity(0.96), W.bgTop.opacity(0)], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .top)
+        )
+        .opacity(Double(max(0, morph * 2 - 1)))
+        .scaleEffect(0.85 + 0.15 * morph, anchor: .top)
+        .allowsHitTesting(false)
     }
 }

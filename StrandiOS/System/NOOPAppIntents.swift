@@ -245,6 +245,11 @@ struct SendHealthDataIntent: AppIntent {
             if pct > 1, pct < 70 { day.bodyFatPct = pct }
         }
         day.leanKg = Self.kilograms(leanMass)
+        // Body fat missing (Health handed it over in a shape NOOP couldn't read) but weight and lean mass
+        // arrived: derive it, since body fat % = (weight − lean) / weight.
+        if day.bodyFatPct == nil, let w = day.weightKg, let l = day.leanKg, w > 0, l < w {
+            day.bodyFatPct = (w - l) / w * 100
+        }
         day.dietaryKcal = Self.total(caloriesEaten)
         day.proteinG = Self.total(protein)
         let nStarts = starts.count, nEnds = ends.count
@@ -284,7 +289,11 @@ struct SendHealthDataIntent: AppIntent {
         case .imported:
             var parts: [String] = []
             if let w = day.weightKg { parts.append(String(format: "weight %.1f lb", w * 2.2046226218)) }
-            if let b = day.bodyFatPct { parts.append(String(format: "body fat %.1f%%", b)) }
+            if let b = day.bodyFatPct {
+                parts.append(String(format: "body fat %.1f%%", b))
+            } else if let raw = bodyFat, !raw.isEmpty {
+                parts.append("body fat unreadable (\(raw.prefix(24)))")
+            }
             if let l = day.leanKg { parts.append(String(format: "lean %.1f lb", l * 2.2046226218)) }
             parts.append(sleepNote)
             if let k = day.dietaryKcal { parts.append("ate \(Int(k.rounded())) kcal") }

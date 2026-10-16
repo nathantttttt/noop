@@ -255,16 +255,33 @@ struct WDial<Center: View>: View {
     let color: Color
     var size: CGFloat = 258
     var lineWidth: CGFloat = 15
+    /// Optional target band (0…1 of the ring), drawn as a lighter arc with a notch at its start: the
+    /// strain dial's optimal range for today's recovery.
+    var target: ClosedRange<Double>? = nil
     @ViewBuilder var center: () -> Center
     @State private var shown: Double = 0
 
     var body: some View {
         ZStack {
             Circle().stroke(Color.white.opacity(0.10), lineWidth: lineWidth)
+            if let target {
+                Circle()
+                    .trim(from: max(0, target.lowerBound), to: min(1, target.upperBound))
+                    .stroke(Color.white.opacity(0.26), style: StrokeStyle(lineWidth: lineWidth))
+                    .rotationEffect(.degrees(-90))
+            }
             Circle()
                 .trim(from: 0, to: max(0, min(1, shown)))
                 .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+            if let target {
+                ForEach([target.lowerBound, target.upperBound], id: \.self) { f in
+                    Capsule().fill(W.text)
+                        .frame(width: max(2, lineWidth * 0.22), height: lineWidth + 6)
+                        .offset(y: -size / 2 + lineWidth / 2)
+                        .rotationEffect(.degrees(360 * max(0, min(1, f))))
+                }
+            }
             center()
         }
         .frame(width: size, height: size)

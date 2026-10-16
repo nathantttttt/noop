@@ -31,7 +31,6 @@ struct WLiftStats: View {
         VStack(alignment: .leading, spacing: W.rowGap) {
             heatmapCard
             volumeCard
-            muscleCard
         }
         .task(id: "\(repo.refreshSeq)-\(session.savedSessions)") { await load() }
     }
@@ -65,13 +64,22 @@ struct WLiftStats: View {
         return n
     }
 
+    /// The map starts the day Nathan restarted training (Thu Oct 15, 2026) and fills forward.
+    static let trackingStart: Date = {
+        var c = DateComponents(); c.year = 2026; c.month = 10; c.day = 15
+        return Calendar.current.date(from: c) ?? Date()
+    }()
+
     private var heatmapCard: some View {
         let cal = Calendar.current
         let maxV = max(1, dayVolume.values.max() ?? 1)
-        let first = cal.date(byAdding: .day, value: -7 * (Self.weeks - 1), to: weekStart) ?? weekStart
+        let startDay = cal.startOfDay(for: Self.trackingStart)
+        let wd = cal.component(.weekday, from: startDay)
+        let first = cal.date(byAdding: .day, value: -(wd - 1), to: startDay) ?? startDay
         let today = cal.startOfDay(for: Date())
         let last30 = (0..<30).filter { i in
-            cal.date(byAdding: .day, value: -i, to: today).map { dayVolume[Repository.localDayKey($0)] != nil } ?? false
+            if let d = cal.date(byAdding: .day, value: -i, to: today), d < startDay { return false }
+            return cal.date(byAdding: .day, value: -i, to: today).map { dayVolume[Repository.localDayKey($0)] != nil } ?? false
         }.count
         return WCard {
             VStack(alignment: .leading, spacing: 14) {
@@ -90,9 +98,12 @@ struct WLiftStats: View {
                                     let date = cal.date(byAdding: .day, value: w * 7 + d, to: first) ?? first
                                     let v = dayVolume[Repository.localDayKey(date)]
                                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .fill(date > today ? Color.clear
-                                              : v == nil ? Color.white.opacity(0.07)
+                                        .fill(date < startDay ? Color.clear
+                                              : date > today ? Color.white.opacity(0.03)
+                                              : v == nil ? Color.white.opacity(0.08)
                                               : W.mint.opacity(0.35 + 0.65 * min(1, (v ?? 0) / maxV)))
+                                        .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                            .stroke(cal.isDate(date, inSameDayAs: today) ? W.text.opacity(0.7) : .clear, lineWidth: 1))
                                         .frame(height: 14)
                                 }
                             }

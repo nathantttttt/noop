@@ -115,7 +115,8 @@ struct WScoreDetail: View {
     private var dial: some View {
         let v = dialValue
         let fraction = v.map { score == .strain ? $0 / 21 : $0 / 100 }
-        return WDial(fraction: fraction, color: dialColor, size: 258, lineWidth: 16) {
+        return WDial(fraction: fraction, color: dialColor, size: 258, lineWidth: 16,
+                     target: score == .strain ? data.strainTarget(day) : nil) {
             VStack(spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(v.map { score == .strain ? WFmt.one($0) : WFmt.int($0) } ?? "--")
@@ -126,6 +127,10 @@ struct WScoreDetail: View {
                 }
                 Text(score == .sleep ? "SLEEP\nPERFORMANCE" : score.rawValue.uppercased())
                     .font(W.caps(16)).tracking(1.8).multilineTextAlignment(.center).foregroundStyle(W.text)
+                if score == .recovery, v == nil, isToday, let n = WhoopData.recoveryCalibration(repo) {
+                    Text("CALIBRATING · \(n) OF \(WhoopData.recoverySeedNights) NIGHTS")
+                        .font(W.caps(12)).tracking(1).foregroundStyle(W.text3)
+                }
             }
         }
     }
@@ -462,34 +467,92 @@ struct WSleepNightCard: View {
     }
 }
 
-/// The Withings mat next to the strap for the same night.
+/// The Withings mat next to the strap: each night's sleep onset and wake-up from both, how far apart
+/// they were, and how often they agree. Strap nights come from NOOP's own sleep detection; mat nights
+/// from the Health Shortcut (first real sleep and last wake, Awake samples filtered out).
 struct WMatCompareCard: View {
     @EnvironmentObject var data: WhoopData
     @EnvironmentObject var repo: Repository
     let day: String
-    @State private var matStart: Double?
-    @State private var matEnd: Double?
+    @State private var matStart: [String: Double] = [:]
+    @State private var matEnd: [String: Double] = [:]
+    @State private var which = 0     // 0 onset, 1 wake
+
+    private struct Night: Identifiable {
+        let id: String
+        let date: Date
+        let strapOn: Double?, strapOff: Double?, matOn: Double?, matOff: Double?   // unix seconds
+    }
+
+    private var nights: [Night] {
+        var strap: [String: (Double, Double)] = [:]
+        for s in repo.sleeps {
+            let k = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(s.endTs)))
+            if let have = strap[k], have.1 - have.0 > Double(s.endTs - s.effectiveStartTs) { continue }
+            strap[k] = (Double(s.effectiveStartTs), Double(s.endTs))
+        }
+        let keys = Set(strap.keys).union(matStart.keys).filter { $0 <= day }.sorted().suffix(14)
+        return keys.compactMap { k in
+            guard let d = WFmt.dayDate(k) else { return nil }
+            return Night(id: k, date: d, strapOn: strap[k]?.0, strapOff: strap[k]?.1, matOn: matStart[k], matOff: matEnd[k])
+        }
+    }
+
+    /// Minutes after 6 PM of the night, so 11 PM and 1 AM sit two hours apart on one axis.
+    private static func clockMinutes(_ ts: Double) -> Double {
+        let d = Date(timeIntervalSince1970: ts)
+        let c = Calendar.current
+        let m = c.component(.hour, from: d) * 60 + c.component(.minute, from: d)
+        return Double((m - 18 * 60 + 1440) % 1440)
+    }
+
+    private static func clockLabel(_ minutesAfter6pm: Double) -> String {
+        let m = (Int(minutesAfter6pm.rounded()) + 18 * 60) % 1440
+        var c = DateComponents(); c.hour = m / 60; c.minute = m % 60
+        return Calendar.current.date(from: c)?.formatted(date: .omitted, time: .shortened) ?? ""
+    }
 
     var body: some View {
-        let mat = data.value(.matSleep, day)
-        let strap = data.value(.hoursVsNeeded, day)
+        let ns = nights
+        let both = ns.filter { which == 0 ? ($0.strapOn != nil && $0.matOn != nil) : ($0.strapOff != nil && $0.matOff != nil) }
+        let diffs = both.map { n -> Double in
+            which == 0 ? abs(n.strapOn! - n.matOn!) / 60 : abs(n.strapOff! - n.matOff!) / 60
+        }
+        let agree = diffs.filter { $0 <= 30 }.count
+        let tonight = ns.last { $0.id == day }
         VStack(spacing: 0) {
-            if mat != nil || matStart != nil {
+            if !matStart.isEmpty {
                 WCard {
                     VStack(alignment: .leading, spacing: 14) {
                         WCardHeader(title: "Strap vs. Sleep Mat")
-                        HStack(alignment: .top) {
-                            col("STRAP", strap.map(WFmt.hm) ?? "-:--", W.hours)
-                            Spacer()
-                            col("SLEEP MAT", mat.map(WFmt.hm) ?? "-:--", W.mint)
-                            Spacer()
-                            if let mat, let strap {
-                                let d = strap - mat
-                                col("DIFFERENCE", (d >= 0 ? "+" : "−") + WFmt.hm(abs(d)), W.text2)
+                        if let t = tonight {
+                            HStack(alignment: .top) {
+                                col("STRAP", t.strapOn, t.strapOff, W.hours)
+                                Spacer()
+                                col("SLEEP MAT", t.matOn, t.matOff, W.mint)
+                                Spacer()
+                                if let a = t.strapOn, let b = t.matOn {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("\(Int((abs(a - b) / 60).rounded())) min").font(W.num(24))
+                                            .foregroundStyle(abs(a - b) <= 1800 ? W.mint : W.orange)
+                                        Text("ONSET GAP").font(W.caps(11)).tracking(1.2).foregroundStyle(W.text3)
+                                    }
+                                }
                             }
                         }
-                        if let s = matStart, let e = matEnd {
-                            Text("Mat: first sleep \(WFmt.clock(Int(s))), up at \(WFmt.clock(Int(e)))")
+                        WSegmented(options: [(0, "FELL ASLEEP"), (1, "WOKE UP")], selection: $which)
+                        chart(ns)
+                        HStack(spacing: 16) {
+                            WLegend(color: W.hours, label: "Strap", ring: true)
+                            WLegend(color: W.mint, label: "Sleep mat", ring: true)
+                            Spacer()
+                        }
+                        if !diffs.isEmpty {
+                            let avg = diffs.reduce(0, +) / Double(diffs.count)
+                            Text("Over \(diffs.count) night\(diffs.count == 1 ? "" : "s") with both, the \(which == 0 ? "sleep onset" : "wake time") differed by \(Int(avg.rounded())) min on average and agreed within 30 min on \(agree) of \(diffs.count).")
+                                .font(W.body(15)).foregroundStyle(W.text2).fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("Once a night has both a strap sleep and a mat sleep, they line up here.")
                                 .font(W.body(15)).foregroundStyle(W.text3)
                         }
                     }
@@ -497,15 +560,72 @@ struct WMatCompareCard: View {
             }
         }
         .task(id: data.loadedSeq) {
-            matStart = await repo.series(key: "ext_sleep_start", source: "apple-health", days: 30).last { $0.day == day }?.value
-            matEnd = await repo.series(key: "ext_sleep_end", source: "apple-health", days: 30).last { $0.day == day }?.value
+            func dict(_ s: [(day: String, value: Double)]) -> [String: Double] {
+                Dictionary(s.map { ($0.day, $0.value) }, uniquingKeysWith: { _, b in b })
+            }
+            matStart = dict(await repo.series(key: "ext_sleep_start", source: "apple-health", days: 60))
+            matEnd = dict(await repo.series(key: "ext_sleep_end", source: "apple-health", days: 60))
         }
     }
 
-    private func col(_ label: String, _ value: String, _ c: Color) -> some View {
+    private struct Dot: Identifiable { let id: String; let date: Date; let y: Double; let src: String }
+
+    @ViewBuilder private func chart(_ ns: [Night]) -> some View {
+        let dots: [Dot] = ns.flatMap { n -> [Dot] in
+            let s = which == 0 ? n.strapOn : n.strapOff
+            let m = which == 0 ? n.matOn : n.matOff
+            var out: [Dot] = []
+            // Negated so earlier times sit higher on the chart.
+            if let s { out.append(Dot(id: n.id + "s", date: n.date, y: -Self.clockMinutes(s), src: "Strap")) }
+            if let m { out.append(Dot(id: n.id + "m", date: n.date, y: -Self.clockMinutes(m), src: "Mat")) }
+            return out
+        }
+        if dots.isEmpty {
+            WNoData(height: 160)
+        } else {
+            let ys = dots.map(\.y)
+            let lo = (ys.min() ?? 0) - 45, hi = (ys.max() ?? 0) + 45
+            Chart {
+                ForEach(ns) { n in
+                    let s = which == 0 ? n.strapOn : n.strapOff
+                    let m = which == 0 ? n.matOn : n.matOff
+                    if let s, let m {
+                        RuleMark(x: .value("Night", n.date, unit: .day),
+                                 yStart: .value("A", -Self.clockMinutes(s)), yEnd: .value("B", -Self.clockMinutes(m)))
+                            .foregroundStyle(Color.white.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 2))
+                    }
+                }
+                ForEach(dots) { d in
+                    PointMark(x: .value("Night", d.date, unit: .day), y: .value("Time", d.y))
+                        .symbol {
+                            Circle().fill(W.bgMid)
+                                .overlay(Circle().stroke(d.src == "Strap" ? W.hours : W.mint, lineWidth: 2.5))
+                                .frame(width: 11, height: 11)
+                        }
+                }
+            }
+            .chartYScale(domain: lo...hi)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
+                    AxisGridLine().foregroundStyle(W.grid)
+                    AxisValueLabel { if let m = v.as(Double.self) { Text(Self.clockLabel(-m)) } }
+                        .font(W.caps(11, .semibold)).foregroundStyle(W.text3)
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day, count: 2)) { _ in
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(W.caps(11, .semibold)).foregroundStyle(W.text3)
+                }
+            }
+            .frame(height: 200)
+        }
+    }
+
+    private func col(_ label: String, _ on: Double?, _ off: Double?, _ c: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(W.num(30)).foregroundStyle(c)
-            Text(label).font(W.caps(12)).tracking(1.2).foregroundStyle(W.text3)
+            Text(on.map { WFmt.clock(Int($0)) } ?? "--").font(W.num(20)).foregroundStyle(c)
+            Text(off.map { "→ " + WFmt.clock(Int($0)) } ?? " ").font(W.body(14)).foregroundStyle(W.text2)
+            Text(label).font(W.caps(11)).tracking(1.2).foregroundStyle(W.text3)
         }
     }
 }

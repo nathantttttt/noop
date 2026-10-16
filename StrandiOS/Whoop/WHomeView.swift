@@ -128,9 +128,17 @@ struct WHomeView: View {
             ForEach([WScore.sleep, .recovery, .strain], id: \.self) { s in
                 NavigationLink(value: WRoute.score(s, dayKey)) {
                     VStack(spacing: 12) {
-                        WDial(fraction: fraction(s), color: color(s), size: 104, lineWidth: 9) {
-                            Text(text(s)).font(W.num(28, .heavy)).foregroundStyle(W.text)
-                                .minimumScaleFactor(0.6).lineLimit(1).padding(.horizontal, 12)
+                        WDial(fraction: fraction(s), color: color(s), size: 104, lineWidth: 9,
+                              target: s == .strain ? data.strainTarget(dayKey) : nil) {
+                            VStack(spacing: 2) {
+                                Text(text(s)).font(W.num(28, .heavy)).foregroundStyle(W.text)
+                                    .minimumScaleFactor(0.6).lineLimit(1).padding(.horizontal, 12)
+                                if s == .recovery, value(.recovery) == nil, dayOffset == 0,
+                                   let n = WhoopData.recoveryCalibration(repo) {
+                                    Text("\(n) OF \(WhoopData.recoverySeedNights)\nNIGHTS").font(W.caps(9)).tracking(0.8)
+                                        .multilineTextAlignment(.center).foregroundStyle(W.text3)
+                                }
+                            }
                         }
                         Text(s.rawValue.uppercased()).font(W.caps(14)).tracking(1.6).foregroundStyle(W.text)
                     }
@@ -147,7 +155,8 @@ struct WHomeView: View {
             ForEach([WScore.sleep, .recovery, .strain], id: \.self) { s in
                 NavigationLink(value: WRoute.score(s, dayKey)) {
                     HStack(spacing: 10) {
-                        WDial(fraction: fraction(s), color: color(s), size: 30, lineWidth: 3.5) { EmptyView() }
+                        WDial(fraction: fraction(s), color: color(s), size: 30, lineWidth: 3.5,
+                              target: s == .strain ? data.strainTarget(dayKey) : nil) { EmptyView() }
                         Text(s.rawValue.uppercased()).font(W.caps(14)).tracking(1.5).foregroundStyle(W.text)
                     }
                     .frame(maxWidth: .infinity)

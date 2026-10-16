@@ -232,6 +232,20 @@ final class WhoopData: ObservableObject {
     @Published private(set) var loadedSeq = -1
     @Published private(set) var loaded = false
 
+    /// Today's optimal strain range for the day's recovery, as fractions of the 0–21 dial.
+    func strainTarget(_ day: String) -> ClosedRange<Double>? {
+        guard let r = CoupledView.optimalStrainRange(recovery: value(.recovery, day)) else { return nil }
+        return Double(r.lowerBound) / 21 ... Double(r.upperBound) / 21
+    }
+
+    /// Nights banked toward the first recovery score (NOOP needs 4), nil once recovery exists.
+    static func recoveryCalibration(_ repo: Repository) -> Int? {
+        RecoveryScorer.calibrationNights(nightlyHrv: repo.chargeBaselines?.hrvHistory.values ?? [],
+                                         dayKeys: repo.chargeBaselines?.hrvHistory.dayKeys ?? [],
+                                         hasRecovery: repo.today?.recovery != nil)
+    }
+    static let recoverySeedNights = Baselines.minNightsSeed
+
     /// Today's daytime stress (0–3 per hour), the same DaytimeStress read the Stress screen uses.
     @Published private(set) var stress: DaytimeStress.Result?
     @Published private(set) var stressLoadedAt: Date?
@@ -314,7 +328,8 @@ final class WhoopData: ObservableObject {
         let weightS = dict(await repo.series(key: "weight", source: "apple-health", days: 800))
         let bodyFatS = dict(await repo.series(key: "body_fat", source: "apple-health", days: 800))
         let leanS = dict(await repo.series(key: "lean_mass", source: "apple-health", days: 800))
-        let vo2S = dict(await repo.series(key: "vo2max", source: "apple-health", days: 800))
+        var vo2S = dict(await repo.exploreSeries(key: "vo2max_est", source: "my-whoop", days: 800))
+        for (k, v) in dict(await repo.series(key: "vo2max", source: "apple-health", days: 800)) { vo2S[k] = v }
         let rows = await repo.workoutRows(days: 400)
 
         var deepD: [String: Double] = [:], remD: [String: Double] = [:]
@@ -345,10 +360,15 @@ final class WhoopData: ObservableObject {
         for (k, v) in leanS { put(.leanMass, k, toUnit(v)) }
         for (k, v) in vo2S { put(.vo2max, k, v) }
         for (k, w) in weightS {
-            guard let bfRaw = bodyFatS[k] else { continue }
-            let bf = bfRaw <= 1 ? bfRaw * 100 : bfRaw
-            put(.fatMass, k, toUnit(w * bf / 100))
-            if leanS[k] == nil { put(.leanMass, k, toUnit(w * (1 - bf / 100))) }
+            if let bfRaw = bodyFatS[k] {
+                let bf = bfRaw <= 1 ? bfRaw * 100 : bfRaw
+                put(.fatMass, k, toUnit(w * bf / 100))
+                if leanS[k] == nil { put(.leanMass, k, toUnit(w * (1 - bf / 100))) }
+            } else if let lean = leanS[k], w > 0, lean < w {
+                // No body-fat reading that day but weight and lean mass are there: fat = weight − lean.
+                put(.bodyFat, k, (w - lean) / w * 100)
+                put(.fatMass, k, toUnit(w - lean))
+            }
         }
         for (k, v) in eaten { put(.caloriesIn, k, v) }
         for (k, v) in protein { put(.protein, k, v) }
