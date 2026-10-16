@@ -154,10 +154,25 @@ struct SendHealthDataIntent: AppIntent {
     /// Sum of every number in a Shortcuts list, one value per line. nil when there is none.
     static func total(_ raw: String?) -> Double? {
         guard let raw else { return nil }
-        let xs = raw.split(whereSeparator: \.isNewline).compactMap { ShortcutHealthImport.leadingNumber(String($0)) }
+        let xs = raw.split(whereSeparator: \.isNewline).compactMap { quantity(String($0)) }
         guard !xs.isEmpty else { return nil }
         let t = xs.reduce(0, +)
         return t > 0 ? t : nil
+    }
+
+    /// One Health quantity as Shortcuts prints it, with thousands separators read as such:
+    /// "1,240 Cal" is 1240 (the shared leadingNumber reads a comma as a decimal point, which is right for
+    /// "21,3 %" but turned a 1,240-calorie meal into 1.24). Kilojoules are converted to kcal.
+    static func quantity(_ line: String) -> Double? {
+        var t = line.replacingOccurrences(of: "\u{202F}", with: "").replacingOccurrences(of: "\u{00A0}", with: "")
+        // Grouped thousands: 1,240 / 12,500.5 / 1 240.
+        if let r = t.range(of: #"^\s*-?\d{1,3}([, ]\d{3})+(\.\d+)?"#, options: .regularExpression) {
+            let digits = t[r].replacingOccurrences(of: ",", with: "").replacingOccurrences(of: " ", with: "")
+            t = digits + t[r.upperBound...]
+        }
+        guard let v = ShortcutHealthImport.leadingNumber(t) else { return nil }
+        let lower = t.lowercased()
+        return lower.contains("kj") ? v / 4.184 : v
     }
 
     /// A Health sample turned into text loses its unit ("154.10…"), so a bare number follows the app's
@@ -296,7 +311,13 @@ struct SendHealthDataIntent: AppIntent {
             }
             if let l = day.leanKg { parts.append(String(format: "lean %.1f lb", l * 2.2046226218)) }
             parts.append(sleepNote)
-            if let k = day.dietaryKcal { parts.append("ate \(Int(k.rounded())) kcal") }
+            if let k = day.dietaryKcal {
+                parts.append("ate \(Int(k.rounded())) kcal")
+            } else if let raw = caloriesEaten, !raw.isEmpty {
+                parts.append("calories unreadable (\(raw.prefix(24)))")
+            } else {
+                parts.append("no calories found")
+            }
             if let p = day.proteinG { parts.append("\(Int(p.rounded())) g protein") }
             return .result(dialog: "Sent to NOOP: \(parts.joined(separator: ", ")).")
         case .nothingToImport:
