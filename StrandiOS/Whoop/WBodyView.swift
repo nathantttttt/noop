@@ -16,6 +16,7 @@ struct WBodyView: View {
         var trend: WPeriod { self == .m1 ? .month : .sixMonths }
     }
     @State private var range: Range = .m1
+    @State private var showCoach = false
 
     private struct P: Identifiable { let id: String; let date: Date; let value: Double }
 
@@ -54,6 +55,8 @@ struct WBodyView: View {
         }
         .background(WBackground())
         .refreshable { await repo.refresh() }
+        .overlay(alignment: .bottomTrailing) { WCoachButton { showCoach = true }.padding(.trailing, 16).padding(.bottom, 10) }
+        .sheet(isPresented: $showCoach) { WCoachSheet() }
         .wRoutes()
     }
 

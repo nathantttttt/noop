@@ -8,6 +8,7 @@ import Charts
 import StrandDesign
 import WhoopStore
 import WhoopProtocol
+import StrandAnalytics
 
 struct NathanWorkoutView: View {
     enum Pane: String, CaseIterable, Identifiable {
@@ -15,6 +16,7 @@ struct NathanWorkoutView: View {
         var id: String { rawValue }
     }
     @AppStorage("nathan.workout.pane") private var paneRaw = Pane.lift.rawValue
+    @State private var showCoach = false
     private var pane: Binding<Pane> {
         Binding(get: { Pane(rawValue: paneRaw) ?? .lift }, set: { paneRaw = $0.rawValue })
     }
@@ -35,6 +37,8 @@ struct NathanWorkoutView: View {
             }
         }
         .background(WBackground())
+        .overlay(alignment: .bottomTrailing) { WCoachButton { showCoach = true }.padding(.trailing, 16).padding(.bottom, 10) }
+        .sheet(isPresented: $showCoach) { WCoachSheet() }
     }
 }
 
@@ -241,8 +245,10 @@ struct NathanHistoryPane: View {
 
 struct NathanActivityDetail: View {
     @EnvironmentObject var repo: Repository
+    @EnvironmentObject var profile: ProfileStore
     let workout: WorkoutRow
     @State private var points: [NathanHRPoint] = []
+    @State private var zoneMinutes: [Double]?
     @State private var loaded = false
 
     private var avgHr: Int? {
@@ -270,6 +276,7 @@ struct NathanActivityDetail: View {
                         }
                     }
                 }
+                if let z = zoneMinutes { WZonesCard(minutes: z, zones: profile.hrZoneSet.zones) }
                 if let notes = workout.notes, !notes.isEmpty, !NathanActivity.isLift(workout) {
                     NathanCard {
                         Text(notes).font(.system(size: 14)).foregroundStyle(NathanStyle.text2)
@@ -329,6 +336,15 @@ struct NathanActivityDetail: View {
         } else {
             let b = await repo.hrBuckets(from: workout.startTs, to: workout.endTs, bucketSeconds: 15)
             points = b.filter { $0.bpm > 30 }.map { NathanHRPoint(ts: $0.ts, bpm: $0.bpm) }
+        }
+        // Time in each zone: imported zone percentages when the row carries them, else the strap's own
+        // samples binned into the profile's zones (the same split the dashboard's zone totals use).
+        if let p = WorkoutZones.percents(workout.zonesJSON) {
+            let mins = Double(max(0, workout.endTs - workout.startTs)) / 60
+            zoneMinutes = p.map { mins * $0 / 100 }
+        } else {
+            zoneMinutes = await repo.workoutZoneMinutes(from: workout.startTs, to: workout.endTs,
+                                                        zoneSet: profile.hrZoneSet, source: workout.source)
         }
         loaded = true
     }
@@ -418,5 +434,50 @@ struct NathanScrubHRChart: View {
         .frame(height: height)
         .padding(.top, 26)
         .accessibilityLabel("Heart rate chart")
+    }
+}
+
+
+/// Time in each heart-rate zone for one activity: share of the session and minutes, WHOOP-style.
+struct WZonesCard: View {
+    let minutes: [Double]
+    let zones: [HRZone]
+
+    static let colors: [Color] = [W.hex(0x9AA7B3), W.lineBlue, W.mint, W.orange, W.red]
+
+    var body: some View {
+        let total = max(1, minutes.reduce(0, +))
+        WCard {
+            VStack(alignment: .leading, spacing: 14) {
+                WCardHeader(title: "Heart Rate Zones")
+                ForEach((0..<min(5, minutes.count)).reversed(), id: \.self) { i in
+                    let pct = minutes[i] / total * 100
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("ZONE \(i + 1)").font(W.caps(12)).tracking(1.1).foregroundStyle(W.text)
+                            if zones.indices.contains(i) {
+                                Text("\(Int(zones[i].lower))–\(Int(zones[i].upper)) bpm").font(W.body(11)).foregroundStyle(W.text3)
+                            }
+                        }
+                        .frame(width: 84, alignment: .leading)
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.07))
+                                RoundedRectangle(cornerRadius: 3).fill(Self.colors[i])
+                                    .frame(width: max(minutes[i] > 0 ? 4 : 0, g.size.width * pct / 100))
+                            }
+                        }
+                        .frame(height: 14)
+                        Text("\(Int(pct.rounded()))%").font(W.num(16)).foregroundStyle(W.text).frame(width: 42, alignment: .trailing)
+                        Text(WFmt.hm(minutes[i])).font(W.num(16)).foregroundStyle(W.text2).frame(width: 46, alignment: .trailing)
+                    }
+                }
+                let z13 = minutes.prefix(3).reduce(0, +), z45 = minutes.dropFirst(3).reduce(0, +)
+                HStack {
+                    Text("Zones 1-3 \(WFmt.hm(z13))  ·  Zones 4-5 \(WFmt.hm(z45))").font(W.body(14)).foregroundStyle(W.text3)
+                    Spacer()
+                }
+            }
+        }
     }
 }

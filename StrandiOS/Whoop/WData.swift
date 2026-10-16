@@ -230,6 +230,9 @@ final class WhoopData: ObservableObject {
     @Published private(set) var rem: [String: Double] = [:]
     @Published private(set) var workouts: [WorkoutRow] = []
     @Published private(set) var loadedSeq = -1
+    /// Per-workout zone minutes computed from strap HR, kept across reloads (a finished session's HR
+    /// does not change).
+    private var zoneCache: [String: [Double]] = [:]
     @Published private(set) var loaded = false
 
     /// Today's optimal strain range for the day's recovery, as fractions of the 0–21 dial.
@@ -299,13 +302,32 @@ final class WhoopData: ObservableObject {
         return mean(m, end: end, days: 30)
     }
 
+    /// The value for `day`, or else the most recent earlier one within `maxBack` days, so numbers stay
+    /// on screen past midnight until a new reading replaces them.
+    func carried(_ m: WMetric, _ day: String, maxBack: Int = 7) -> (value: Double, day: String)? {
+        if let v = series[m]?[day] { return (v, day) }
+        guard let d = WFmt.dayDate(day),
+              let floor = Calendar.current.date(byAdding: .day, value: -maxBack, to: d).map(Repository.localDayKey),
+              let s = series[m] else { return nil }
+        guard let k = s.keys.filter({ $0 < day && $0 >= floor }).max(), let v = s[k] else { return nil }
+        return (v, k)
+    }
+
+    /// "Yesterday" / "Tue" label for a carried value's day relative to `day`.
+    static func asOf(_ valueDay: String, relativeTo day: String) -> String? {
+        guard valueDay != day, let a = WFmt.dayDate(valueDay), let b = WFmt.dayDate(day) else { return nil }
+        let n = Calendar.current.dateComponents([.day], from: a, to: b).day ?? 0
+        if n == 1 { return "YESTERDAY" }
+        return a.formatted(.dateTime.weekday(.abbreviated)).uppercased()
+    }
+
     /// Latest day that has a value, with the value.
     func latest(_ m: WMetric) -> (day: String, value: Double)? {
         guard let s = series[m], let k = s.keys.max(), let v = s[k] else { return nil }
         return (k, v)
     }
 
-    func load(_ repo: Repository) async {
+    func load(_ repo: Repository, zoneSet: HRZoneSet? = nil) async {
         func dict(_ s: [(day: String, value: Double)]) -> [String: Double] {
             Dictionary(s.map { ($0.day, $0.value) }, uniquingKeysWith: { _, b in b })
         }
@@ -412,6 +434,18 @@ final class WhoopData: ObservableObject {
             if let p = WorkoutZones.percents(r.zonesJSON) {
                 out[.zones13, default: [:]][day, default: 0] += minutes * (p[0] + p[1] + p[2]) / 100
                 out[.zones45, default: [:]][day, default: 0] += minutes * (p[3] + p[4]) / 100
+            } else if let zoneSet, r.startTs > Int(Date().timeIntervalSince1970) - 120 * 86_400 {
+                // No imported split: bin the strap's own heart rate for the session into the profile's zones.
+                let key = "\(r.startTs)-\(r.endTs)"
+                var z = zoneCache[key]
+                if z == nil {
+                    z = await repo.workoutZoneMinutes(from: r.startTs, to: r.endTs, zoneSet: zoneSet, source: r.source)
+                    if let z { zoneCache[key] = z }
+                }
+                if let z, z.count >= 5 {
+                    out[.zones13, default: [:]][day, default: 0] += z[0] + z[1] + z[2]
+                    out[.zones45, default: [:]][day, default: 0] += z[3] + z[4]
+                }
             }
         }
 

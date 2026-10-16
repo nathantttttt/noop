@@ -140,7 +140,7 @@ struct RootTabView: View {
         .tint(.white)
         .environmentObject(whoopData)
         .task(id: repo.refreshSeq) {
-            await whoopData.load(repo)
+            await whoopData.load(repo, zoneSet: profile.hrZoneSet)
             await whoopData.loadStress(repo)
             let data = whoopData, r = repo, p = profile
             AICoachEngine.extraContext = { await WCoachContext.build(data: data, repo: r, age: p.age) }

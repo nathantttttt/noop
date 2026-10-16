@@ -6,6 +6,7 @@
 
 import Foundation
 import WhoopStore
+import StrandAnalytics
 
 @MainActor
 enum WCoachContext {
@@ -15,15 +16,36 @@ enum WCoachContext {
         let today = Date()
         let unit = WMetric.massUnit
 
+        out.append("Today is \(today.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute())).")
+        if let last = repo.sleeps.map(\.endTs).max() {
+            out.append("Last recorded sleep ended \(Date(timeIntervalSince1970: TimeInterval(last)).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())).")
+        }
+        if let n = WhoopData.recoveryCalibration(repo) {
+            out.append("Recovery is still calibrating: \(n) of \(WhoopData.recoverySeedNights) nights banked.")
+        }
+
         // Daily table
-        out.append("### Last 14 days (date | recovery % | HRV ms | RHR | sleep h (need h, perf %) | strain 0-21 | steps | kcal burned | kcal eaten | protein g)")
+        out.append("### Last 14 days (date | recovery % | HRV ms | RHR | resp /min | sleep h:mm (need, perf %, deep, REM, eff %) | sleep debt | strain 0-21 | zones 1-3 / 4-5 min | steps | kcal burned | kcal eaten | protein g)")
         for back in (0..<14).reversed() {
             guard let d = cal.date(byAdding: .day, value: -back, to: today) else { continue }
             let k = Repository.localDayKey(d)
             func f(_ m: WMetric, _ fmt: (Double) -> String = { WFmt.int($0) }) -> String { data.value(m, k).map(fmt) ?? "-" }
             let sleep = data.value(.hoursVsNeeded, k).map { WFmt.hm($0) } ?? "-"
             let need = data.need[k].map { WFmt.hm($0) } ?? "-"
-            out.append("\(k) | \(f(.recovery)) | \(f(.hrv)) | \(f(.rhr)) | \(sleep) (\(need), \(f(.sleepPerformance))) | \(f(.strain, WFmt.one)) | \(f(.steps)) | \(f(.calories)) | \(f(.caloriesIn)) | \(f(.protein))")
+            let deep = data.deep[k].map { WFmt.hm($0) } ?? "-", rem = data.rem[k].map { WFmt.hm($0) } ?? "-"
+            out.append("\(k) | \(f(.recovery)) | \(f(.hrv)) | \(f(.rhr)) | \(f(.respRate, WFmt.one)) | \(sleep) (\(need), \(f(.sleepPerformance)), \(deep), \(rem), \(f(.sleepEfficiency))) | \(f(.sleepDebt, WFmt.hm)) | \(f(.strain, WFmt.one)) | \(f(.zones13))/\(f(.zones45)) | \(f(.steps)) | \(f(.calories)) | \(f(.caloriesIn)) | \(f(.protein))")
+        }
+
+        // Every activity in the last 21 days
+        let recent = data.workouts.filter { $0.startTs > Int(today.timeIntervalSince1970) - 21 * 86_400 }
+        if !recent.isEmpty {
+            out.append("### Activities, last 21 days (date time | type | duration | strain 0-21 | avg/max HR | kcal)")
+            for w in recent {
+                let when = Date(timeIntervalSince1970: TimeInterval(w.startTs)).formatted(.dateTime.month(.abbreviated).day().hour().minute())
+                let name = NathanActivity.isLift(w) ? (w.notes?.isEmpty == false ? w.notes! : "Strength") : WorkoutSource.displaySport(w.sport)
+                let strain = NathanActivity.strain21(w).map(WFmt.one) ?? "-"
+                out.append("- \(when) | \(name) | \(NathanActivity.durationText(NathanActivity.duration(w))) | \(strain) | \(w.avgHr.map(String.init) ?? "-")/\(w.maxHr.map(String.init) ?? "-") | \(w.energyKcal.map { WFmt.int($0) } ?? "-")")
+            }
         }
 
         // 30-day averages vs prior 30
@@ -91,6 +113,17 @@ enum WCoachContext {
                 }
             }
         }
+        // Journal habits with the clearest effect on recovery
+        let hub = InsightsHubViewModel()
+        await hub.load(repo: repo)
+        hub.rankFor(.recovery)
+        if !hub.ranked.isEmpty {
+            out.append("### Journal habits vs. next-day recovery (association, not cause)")
+            for r in hub.ranked.prefix(6) {
+                out.append("- \(r.behavior): with \(WFmt.int(r.effect.meanWith))% vs without \(WFmt.int(r.effect.meanWithout))% (\(r.effect.nWith)/\(r.effect.nWithout) days, \(r.leadLagText))")
+            }
+        }
+
         out.append("Training plan: lifts Tue/Thu/Sat (Workout A/B alternating). Goals: lower resting HR, raise HRV, lower body fat, raise lean mass. Calories are tracked in MacroFactor.")
         return out.joined(separator: "\n")
     }

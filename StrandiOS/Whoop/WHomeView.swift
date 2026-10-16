@@ -40,6 +40,7 @@ struct WHomeView: View {
                         Color.clear.preference(key: DialsOffsetKey.self, value: g.frame(in: .named("home")).minY)
                     })
                 VStack(alignment: .leading, spacing: W.rowGap) {
+                    staleBanner
                     activities
                     monitors
                     NathanSignalsCard()
@@ -100,13 +101,19 @@ struct WHomeView: View {
 
     // MARK: Dials
 
-    private func value(_ s: WScore) -> Double? {
+    /// Today's value, or (on today only) the last one recorded, so the dials don't blank at midnight.
+    private func carriedScore(_ s: WScore) -> (value: Double, day: String)? {
+        let back = dayOffset == 0 ? 2 : 0
         switch s {
-        case .sleep: data.value(.sleepPerformance, dayKey) ?? data.value(.hoursVsNeededPct, dayKey).map { min(100, $0) }
-        case .recovery: data.value(.recovery, dayKey)
-        case .strain: data.value(.strain, dayKey)
+        case .sleep:
+            return data.carried(.sleepPerformance, dayKey, maxBack: back)
+                ?? data.carried(.hoursVsNeededPct, dayKey, maxBack: back).map { (value: min(100, $0.value), day: $0.day) }
+        case .recovery: return data.carried(.recovery, dayKey, maxBack: back)
+        case .strain: return data.carried(.strain, dayKey, maxBack: back)
         }
     }
+
+    private func value(_ s: WScore) -> Double? { carriedScore(s)?.value }
 
     private func color(_ s: WScore) -> Color {
         switch s {
@@ -140,7 +147,11 @@ struct WHomeView: View {
                                 }
                             }
                         }
-                        Text(s.rawValue.uppercased()).font(W.caps(14)).tracking(1.6).foregroundStyle(W.text)
+                        VStack(spacing: 2) {
+                            Text(s.rawValue.uppercased()).font(W.caps(14)).tracking(1.6).foregroundStyle(W.text)
+                            Text(carriedScore(s).flatMap { WhoopData.asOf($0.day, relativeTo: dayKey) } ?? " ")
+                                .font(W.caps(10)).tracking(1).foregroundStyle(W.text3)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -201,19 +212,32 @@ struct WHomeView: View {
     private func rowValue(_ m: WMetric) -> (String, Bool?)? {
         let weekly = m == .zones13 || m == .zones45 || m == .strengthTime
         let v: Double?
+        var asOfDay: String?
         if weekly {
             let xs = data.window(m, end: day, days: 7).compactMap(\.value)
             v = xs.isEmpty ? nil : xs.reduce(0, +)
         } else {
-            v = data.value(m, dayKey)
+            let c = data.carried(m, dayKey, maxBack: m.group == .body ? 365 : 7)
+            v = c?.value
+            asOfDay = c?.day
         }
         guard let v else { return nil }
         var good: Bool?
-        if !weekly, let b = data.baseline(m, before: dayKey), m.better != .neither, abs(v - b) > max(abs(b) * 0.03, 0.0001) {
+        let ref = asOfDay ?? dayKey
+        if !weekly, let b = data.baseline(m, before: ref), m.better != .neither, abs(v - b) > max(abs(b) * 0.03, 0.0001) {
             good = m.better == .up ? v > b : v < b
         }
         let unit = m.unit == "%" ? "%" : ""
         return ((m.isDuration ? WFmt.hm(v) : m.format(v)) + unit, good)
+    }
+
+    /// Small "YESTERDAY" / weekday tag on a carried value; "STALE" when it is older than 30 hours.
+    private func rowAsOf(_ m: WMetric) -> String? {
+        guard m != .zones13, m != .zones45, m != .strengthTime, m.group != .body,
+              let c = data.carried(m, dayKey), c.day != dayKey else { return nil }
+        if let d = WFmt.dayDate(c.day), let b = WFmt.dayDate(dayKey),
+           (Calendar.current.dateComponents([.day], from: d, to: b).day ?? 0) >= 2 { return "STALE" }
+        return WhoopData.asOf(c.day, relativeTo: dayKey)
     }
 
     private func dashboardRow(_ m: WMetric) -> some View {
@@ -225,6 +249,9 @@ struct WHomeView: View {
                 .foregroundStyle(W.text).lineLimit(1).minimumScaleFactor(0.7)
             Spacer(minLength: 6)
             if let rv {
+                if let tag = rowAsOf(m) {
+                    Text(tag).font(W.caps(10)).tracking(0.8).foregroundStyle(tag == "STALE" ? W.orange : W.text3)
+                }
                 if let g = rv.1 {
                     Image(systemName: g ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                         .font(.system(size: 8)).foregroundStyle(g ? W.mint : W.orange)
@@ -317,12 +344,15 @@ struct WHomeView: View {
     // MARK: Nutrition
 
     private var nutrition: some View {
-        let eaten = data.value(.caloriesIn, dayKey), burned = data.value(.calories, dayKey)
-        let protein = data.value(.protein, dayKey)
+        let eatenC = data.carried(.caloriesIn, dayKey, maxBack: 2)
+        let eaten = eatenC?.value
+        let burned = eatenC.flatMap { data.value(.calories, $0.day) } ?? data.carried(.calories, dayKey, maxBack: 2)?.value
+        let protein = data.carried(.protein, dayKey, maxBack: 2)?.value
         return NavigationLink(value: WRoute.trend(.energyBalance, .week)) {
             WCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    WCardHeader(title: "Calories", chevron: true)
+                    WCardHeader(title: eatenC.flatMap { WhoopData.asOf($0.day, relativeTo: dayKey) }.map { "Calories · " + $0.capitalized } ?? "Calories",
+                                chevron: true)
                     HStack(alignment: .top) {
                         kcalCol("EATEN", eaten, W.orange)
                         Spacer()
@@ -372,6 +402,29 @@ struct WHomeView: View {
             ForEach(todays, id: \.startTs) { w in
                 NavigationLink(value: WRoute.activity(w.startTs)) { WActivityRow(workout: w) }
                     .buttonStyle(WPressStyle())
+            }
+        }
+    }
+
+    // MARK: Stale data
+
+    /// Speaks up when no sleep has been recorded for more than 30 hours.
+    @ViewBuilder private var staleBanner: some View {
+        if dayOffset == 0, let last = repo.sleeps.map(\.endTs).max() {
+            let hours = (Date().timeIntervalSince1970 - Double(last)) / 3600
+            if hours > 30 {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "moon.zzz").font(.system(size: 18)).foregroundStyle(W.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NO NEW SLEEP IN \(Int(hours)) HOURS").font(W.caps(13)).tracking(1.2).foregroundStyle(W.text)
+                        Text("Last recorded night ended \(Date(timeIntervalSince1970: TimeInterval(last)).formatted(.dateTime.weekday(.wide).hour().minute())). Wear the strap overnight and open NOOP in the morning to sync. Your other numbers show their last recorded values.")
+                            .font(W.body(14)).foregroundStyle(W.text2).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(W.row, in: RoundedRectangle(cornerRadius: W.cardRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: W.cardRadius, style: .continuous).stroke(W.orange.opacity(0.5), lineWidth: 1))
             }
         }
     }
