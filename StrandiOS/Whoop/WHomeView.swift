@@ -18,13 +18,15 @@ struct WHomeView: View {
     @EnvironmentObject var data: WhoopData
     @AppStorage(WDashboard.key) private var dashboardCSV = WDashboard.defaultCSV
     @State private var dayOffset = 0
-    @State private var dialsBottom: CGFloat = 400
+    @State private var scrollY: CGFloat = 0
     @State private var showCustomize = false
     @State private var showJournal = false
+    @State private var showCoach = false
 
     private var day: Date { Calendar.current.date(byAdding: .day, value: -dayOffset, to: Date()) ?? Date() }
     private var dayKey: String { Repository.localDayKey(day) }
-    private var collapsed: Bool { dialsBottom < 70 }
+    /// 0 at the top of the page, 1 once the big dials have scrolled under the bar.
+    private var morph: CGFloat { min(1, max(0, (scrollY - 50) / 120)) }
 
     var body: some View {
         ScrollView {
@@ -32,15 +34,18 @@ struct WHomeView: View {
                 header.padding(.top, 4)
                 dials
                     .padding(.top, 22)
+                    .scaleEffect(1 - 0.3 * morph, anchor: .top)
+                    .opacity(Double(1 - morph))
                     .background(GeometryReader { g in
-                        Color.clear.preference(key: DialsOffsetKey.self, value: g.frame(in: .named("home")).maxY)
+                        Color.clear.preference(key: DialsOffsetKey.self, value: g.frame(in: .named("home")).minY)
                     })
                 VStack(alignment: .leading, spacing: W.rowGap) {
-                    NathanSignalsCard().padding(.top, 8)
+                    activities
+                    monitors
+                    NathanSignalsCard()
                     dashboard
                     strainRecovery
                     nutrition
-                    activities
                     journalCard
                 }
                 .padding(.top, 18)
@@ -49,9 +54,15 @@ struct WHomeView: View {
             .padding(.bottom, 40)
         }
         .coordinateSpace(name: "home")
-        .onPreferenceChange(DialsOffsetKey.self) { v in dialsBottom = v }
+        .modifier(WScrollTracker(y: $scrollY))
+        .onPreferenceChange(DialsOffsetKey.self) { v in
+            // iOS 17 fallback; iOS 18+ reads the scroll position directly (WScrollTracker).
+            if #unavailable(iOS 18) { scrollY = 26 - v }
+        }
         .background(WBackground())
         .overlay(alignment: .top) { compactHeader }
+        .overlay(alignment: .bottomTrailing) { WCoachButton { showCoach = true }.padding(.trailing, 16).padding(.bottom, 10) }
+        .sheet(isPresented: $showCoach) { WCoachSheet() }
         .refreshable { await repo.refresh() }
         .wRoutes()
         .sheet(isPresented: $showCustomize) { WDashboardCustomize(csv: $dashboardCSV) }
@@ -68,8 +79,7 @@ struct WHomeView: View {
 
     private var header: some View {
         HStack {
-            Circle().fill(W.row).frame(width: 40, height: 40)
-                .overlay(Text("N").font(W.num(19)).foregroundStyle(W.text))
+            WAvatar()
             Spacer()
             HStack(spacing: 18) {
                 Button { WHaptics.select(); dayOffset += 1 } label: { Image(systemName: "chevron.left") }
@@ -152,10 +162,9 @@ struct WHomeView: View {
             LinearGradient(colors: [W.bgTop, W.bgTop.opacity(0.94)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea(edges: .top)
         )
-        .opacity(collapsed ? 1 : 0)
-        .offset(y: collapsed ? 0 : -16)
-        .animation(.easeOut(duration: 0.22), value: collapsed)
-        .allowsHitTesting(collapsed)
+        .opacity(Double(max(0, morph * 2 - 1)))
+        .offset(y: (1 - morph) * -14)
+        .allowsHitTesting(morph > 0.9)
     }
 
     // MARK: My Dashboard
@@ -351,11 +360,19 @@ struct WHomeView: View {
     @ViewBuilder private var activities: some View {
         let todays = data.workouts.filter { Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval($0.startTs))) == dayKey }
         if !todays.isEmpty {
-            WSectionTitle(title: "Activities")
             ForEach(todays, id: \.startTs) { w in
                 NavigationLink(value: WRoute.activity(w.startTs)) { WActivityRow(workout: w) }
                     .buttonStyle(WPressStyle())
             }
+        }
+    }
+
+    // MARK: Health + Stress monitor tiles
+
+    private var monitors: some View {
+        HStack(spacing: W.rowGap) {
+            NavigationLink(value: WRoute.healthMonitor) { WHealthMonitorTile() }.buttonStyle(WPressStyle())
+            NavigationLink(value: WRoute.stress) { WStressTile() }.buttonStyle(WPressStyle())
         }
     }
 

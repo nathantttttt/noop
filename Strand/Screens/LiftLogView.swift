@@ -45,7 +45,13 @@ struct LiftLogView: View {
             onRefresh: { await load() }
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                #if os(iOS)
+                // Nathan's build: the heat map, lifetime volume and sets-per-muscle cards replace the
+                // explanatory header on iPhone.
+                WLiftStats()
+                #else
                 headerCard
+                #endif
                 programsSection
                 weekSection
                 historySection

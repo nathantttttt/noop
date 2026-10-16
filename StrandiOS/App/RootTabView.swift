@@ -30,6 +30,7 @@ struct RootTabView: View {
     let homeScreenQuickActionsEnabled: Bool
 
     @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var profile: ProfileStore
     /// Cross-screen navigation requests (e.g. Live → "Manage devices"). Devices isn't a tab — it lives
     /// behind the More list — so a request presents it as a sheet, matching the quick-action screens.
     @EnvironmentObject private var router: NavRouter
@@ -131,14 +132,19 @@ struct RootTabView: View {
             // Nathan's layout: Today · Sleep · Lift · Body · More. Trends, the stock Today and Coach live in
             // More. Tags stay fixed so `tabPaths` / `scrollTop` keep one slot per tab.
             tab(WHomeView(), "Home", "house", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
-            tab(WHealthView(), "Health", "heart", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
+            tab(WHealthTab(), "Health", "heart", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
             tab(NathanWorkoutView().wRoutes(), "Workout", "dumbbell", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            tab(NathanBodyView().wRoutes(), "Body", "figure.arms.open", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
+            tab(WBodyView(), "Body", "figure.arms.open", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
         .tint(.white)
         .environmentObject(whoopData)
-        .task(id: repo.refreshSeq) { await whoopData.load(repo) }
+        .task(id: repo.refreshSeq) {
+            await whoopData.load(repo)
+            await whoopData.loadStress(repo)
+            let data = whoopData, r = repo, p = profile
+            AICoachEngine.extraContext = { await WCoachContext.build(data: data, repo: r, age: p.age) }
+        }
         .environment(\.nathanSelectTab, { tag in
             withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = tag }
         })

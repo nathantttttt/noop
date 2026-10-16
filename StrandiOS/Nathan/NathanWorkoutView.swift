@@ -21,13 +21,12 @@ struct NathanWorkoutView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Workout type", selection: pane) {
-                ForEach(Pane.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, NathanStyle.page)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+            Text("WORKOUT").font(W.caps(15)).tracking(1.6).foregroundStyle(W.text)
+                .frame(maxWidth: .infinity).padding(.top, 8)
+            WSegmented(options: Pane.allCases.map { ($0, $0.rawValue.uppercased()) }, selection: pane)
+                .padding(.horizontal, NathanStyle.page)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
             switch pane.wrappedValue {
             case .lift: LiftLogView()
@@ -35,7 +34,7 @@ struct NathanWorkoutView: View {
             case .history: NathanHistoryPane()
             }
         }
-        .background(NathanStyle.canvas.ignoresSafeArea())
+        .background(WBackground())
     }
 }
 

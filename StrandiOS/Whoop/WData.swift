@@ -6,6 +6,7 @@
 
 import SwiftUI
 import WhoopStore
+import StrandAnalytics
 
 enum WPeriod: String, CaseIterable, Hashable {
     case week, month, sixMonths
@@ -17,7 +18,7 @@ enum WPeriod: String, CaseIterable, Hashable {
 
 enum WBetter { case up, down, neither }
 
-enum WGroup: String { case sleep, recovery, strain, nutrition, health }
+enum WGroup: String { case sleep, recovery, strain, nutrition, health, body }
 
 enum WChart { case bars, recoveryBars, line, dualNeed, restorative, sleepStress }
 
@@ -31,8 +32,16 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
     case strain, zones13, zones45, strengthTime, steps, calories
     // Nutrition
     case caloriesIn, protein, energyBalance
+    // Body (InBody scale through Apple Health) and fitness
+    case weight, bodyFat, leanMass, fatMass, vo2max
 
     var id: String { rawValue }
+
+    /// Mass metrics are stored in the user's unit (lb for imperial) so every chart and label agrees.
+    static var imperial: Bool {
+        (UserDefaults.standard.string(forKey: UnitPrefs.systemKey) ?? "imperial") == UnitSystem.imperial.rawValue
+    }
+    static var massUnit: String { imperial ? "lb" : "kg" }
 
     var group: WGroup {
         switch self {
@@ -42,6 +51,7 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
         case .spo2, .skinTemp: .health
         case .strain, .zones13, .zones45, .strengthTime, .steps, .calories: .strain
         case .caloriesIn, .protein, .energyBalance: .nutrition
+        case .weight, .bodyFat, .leanMass, .fatMass, .vo2max: .body
         }
     }
 
@@ -71,6 +81,11 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
         case .caloriesIn: "Calories Eaten"
         case .protein: "Protein"
         case .energyBalance: "Calories In vs. Out"
+        case .weight: "Weight"
+        case .bodyFat: "Body Fat"
+        case .leanMass: "Lean Body Mass"
+        case .fatMass: "Body Fat Mass"
+        case .vo2max: "VO₂ Max"
         }
     }
 
@@ -97,6 +112,11 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
         case .caloriesIn: "fork.knife"
         case .protein: "fish"
         case .energyBalance: "plusminus"
+        case .weight: "scalemass"
+        case .bodyFat: "percent"
+        case .leanMass: "figure.strengthtraining.traditional"
+        case .fatMass: "drop.halffull"
+        case .vo2max: "lungs"
         }
     }
 
@@ -113,12 +133,16 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
         case .steps: "Steps"
         case .calories, .caloriesIn, .energyBalance: "Cals"
         case .protein: "g"
+        case .weight, .leanMass, .fatMass: WMetric.massUnit
+        case .bodyFat: "%"
+        case .vo2max: "ml/kg/min"
         }
     }
 
     var better: WBetter {
         switch self {
-        case .rhr, .sleepDebt, .respRate, .skinTemp: .down
+        case .rhr, .sleepDebt, .respRate, .skinTemp, .bodyFat, .fatMass: .down
+        case .weight: .neither
         case .strain, .energyBalance: .neither
         default: .up
         }
@@ -127,7 +151,7 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
     var chart: WChart {
         switch self {
         case .recovery: .recoveryBars
-        case .hrv, .rhr, .respRate, .spo2, .skinTemp: .line
+        case .hrv, .rhr, .respRate, .spo2, .skinTemp, .weight, .bodyFat, .leanMass, .fatMass, .vo2max: .line
         case .hoursVsNeeded: .dualNeed
         case .restorative: .restorative
         default: .bars
@@ -153,7 +177,7 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
     func format(_ v: Double) -> String {
         if isDuration { return WFmt.hm(v) }
         switch self {
-        case .strain, .respRate: return WFmt.one(v)
+        case .strain, .respRate, .weight, .bodyFat, .leanMass, .fatMass: return WFmt.one(v)
         case .skinTemp: return (v >= 0 ? "+" : "") + WFmt.one(v)
         case .steps, .calories, .caloriesIn, .energyBalance: return WFmt.grouped(v)
         default: return WFmt.int(v)
@@ -187,6 +211,11 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
         case .caloriesIn: "Calories eaten, imported from MacroFactor through Apple Health."
         case .protein: "Protein eaten, imported from MacroFactor through Apple Health."
         case .energyBalance: "Calories eaten minus calories burned. Below zero is a deficit."
+        case .weight: "Body weight from your smart scale, through Apple Health."
+        case .bodyFat: "Body fat percentage from your InBody scale. Measure at the same time of day for the cleanest trend."
+        case .leanMass: "Lean body mass: everything that isn't fat, mostly muscle and water. Rising lean mass with falling fat is a recomposition."
+        case .fatMass: "Pounds of fat, from weight times body fat percentage."
+        case .vo2max: "VO₂ Max is the most oxygen your body can use during hard exercise, one of the strongest predictors of long-term health."
         }
     }
 }
@@ -203,7 +232,33 @@ final class WhoopData: ObservableObject {
     @Published private(set) var loadedSeq = -1
     @Published private(set) var loaded = false
 
+    /// Today's daytime stress (0–3 per hour), the same DaytimeStress read the Stress screen uses.
+    @Published private(set) var stress: DaytimeStress.Result?
+    @Published private(set) var stressLoadedAt: Date?
+
     var todayKey: String { Repository.localDayKey(Date()) }
+
+    /// Latest scored hour's stress level, 0…3.
+    var currentStress: Double? {
+        let pts = (stress?.timeline.isEmpty == false ? stress?.timeline : stress?.hours) ?? []
+        return pts.last(where: { $0.level != nil })?.level
+    }
+
+    func loadStress(_ repo: Repository) async {
+        let cal = Calendar.current
+        let from = Int(cal.startOfDay(for: Date()).timeIntervalSince1970)
+        let to = Int(Date().timeIntervalSince1970)
+        let tz = TimeZone.current.secondsFromGMT(for: Date())
+        let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
+        guard hr.count >= DaytimeStress.minHourHRSamples else { stress = .empty; stressLoadedAt = Date(); return }
+        let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
+        let gravity = await repo.gravitySamplesUnion(from: from, to: to, limit: 200_000)
+        stress = await runUnescalated(priority: .userInitiated) {
+            DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: .dayRelative,
+                                  includeTimeline: true)
+        }
+        stressLoadedAt = Date()
+    }
 
     func value(_ m: WMetric, _ day: String) -> Double? { series[m]?[day] }
 
@@ -256,6 +311,10 @@ final class WhoopData: ObservableObject {
         var protein = dict(await repo.series(key: "protein_g", source: "nutrition-csv", days: 400))
         for (k, v) in dict(await repo.series(key: "protein_g", source: "apple-health", days: 400)) { protein[k] = v }
         let matAsleep = dict(await repo.series(key: "asleep_min", source: "apple-health", days: 400))
+        let weightS = dict(await repo.series(key: "weight", source: "apple-health", days: 800))
+        let bodyFatS = dict(await repo.series(key: "body_fat", source: "apple-health", days: 800))
+        let leanS = dict(await repo.series(key: "lean_mass", source: "apple-health", days: 800))
+        let vo2S = dict(await repo.series(key: "vo2max", source: "apple-health", days: 800))
         let rows = await repo.workoutRows(days: 400)
 
         var deepD: [String: Double] = [:], remD: [String: Double] = [:]
@@ -280,6 +339,17 @@ final class WhoopData: ObservableObject {
         for (k, v) in perf { put(.sleepPerformance, k, v) }
         for (k, v) in debt { put(.sleepDebt, k, v) }
         for (k, v) in matAsleep { put(.matSleep, k, v) }
+        let toUnit: (Double) -> Double = { WMetric.imperial ? $0 * 2.2046226218 : $0 }
+        for (k, v) in weightS { put(.weight, k, toUnit(v)) }
+        for (k, v) in bodyFatS { put(.bodyFat, k, v <= 1 ? v * 100 : v) }
+        for (k, v) in leanS { put(.leanMass, k, toUnit(v)) }
+        for (k, v) in vo2S { put(.vo2max, k, v) }
+        for (k, w) in weightS {
+            guard let bfRaw = bodyFatS[k] else { continue }
+            let bf = bfRaw <= 1 ? bfRaw * 100 : bfRaw
+            put(.fatMass, k, toUnit(w * bf / 100))
+            if leanS[k] == nil { put(.leanMass, k, toUnit(w * (1 - bf / 100))) }
+        }
         for (k, v) in eaten { put(.caloriesIn, k, v) }
         for (k, v) in protein { put(.protein, k, v) }
         for (k, asleep) in out[.hoursVsNeeded] ?? [:] {

@@ -953,9 +953,17 @@ final class AICoachEngine: ObservableObject {
 
     /// Full data context = the metrics summary + recent workouts (+ an OPT-IN on-device-signals summary
     /// when the second consent is on). Used when the user has granted data access.
+    /// Nathan's build: an extra, app-supplied summary (body composition, nutrition, lifting, sleep mat,
+    /// NOOP Age) appended to the data context. Set by the iOS shell; nil elsewhere.
+    static var extraContext: (@MainActor () async -> String)?
+
     func buildFullContext() async -> String {
         var ctx = buildContext()
         ctx += "\n\n" + (await recentWorkoutsBlock())
+        if let extra = Self.extraContext {
+            let block = await extra()
+            if !block.isEmpty { ctx += "\n\n" + block }
+        }
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
         // way StressView does. Gated here under `dataConsent` (the caller only reaches buildFullContext()
         // with consent on), so it rides the SAME consent + text-only channel as the HRV/RHR summary, a

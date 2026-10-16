@@ -14,6 +14,9 @@ enum WRoute: Hashable {
     case trend(WMetric, WPeriod)
     case activity(Int)                  // workout startTs
     case journal
+    case healthMonitor
+    case stress
+    case healthspan
 }
 
 /// Destinations for the WHOOP-style stack, registered once at the root of each tab that uses them.
@@ -30,6 +33,12 @@ struct WRouteDestinations: ViewModifier {
                 }
             case .journal:
                 WJournalImpacts()
+            case .healthMonitor:
+                WHealthMonitorView()
+            case .stress:
+                WStressView()
+            case .healthspan:
+                WHealthspanView()
             }
         }
     }
