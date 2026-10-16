@@ -133,7 +133,8 @@ struct WHomeView: View {
     private var dials: some View {
         HStack(spacing: 0) {
             ForEach([WScore.sleep, .recovery, .strain], id: \.self) { s in
-                NavigationLink(value: WRoute.score(s, dayKey)) {
+                // Open on the day the ring is showing (yesterday's, if today has no score yet).
+                NavigationLink(value: WRoute.score(s, carriedScore(s)?.day ?? dayKey)) {
                     VStack(spacing: 12) {
                         WDial(fraction: fraction(s), color: color(s), size: 104, lineWidth: 9,
                               target: s == .strain ? data.strainTarget(dayKey) : nil) {
@@ -164,7 +165,7 @@ struct WHomeView: View {
     private var compactHeader: some View {
         HStack(spacing: 0) {
             ForEach([WScore.sleep, .recovery, .strain], id: \.self) { s in
-                NavigationLink(value: WRoute.score(s, dayKey)) {
+                NavigationLink(value: WRoute.score(s, carriedScore(s)?.day ?? dayKey)) {
                     HStack(spacing: 10) {
                         WDial(fraction: fraction(s), color: color(s), size: 30, lineWidth: 3.5,
                               target: s == .strain ? data.strainTarget(dayKey) : nil) { EmptyView() }
@@ -297,12 +298,15 @@ struct WHomeView: View {
                                 .foregroundStyle(W.strain).lineStyle(StrokeStyle(lineWidth: 2.5))
                             PointMark(x: .value("Day", d.date, unit: .day), y: .value("Strain", (d.strain ?? 0) / 21 * 100))
                                 .foregroundStyle(W.strain).symbolSize(40)
-                                .annotation(position: .top, spacing: 4) {
+                                .annotation(position: .top, spacing: 6) {
+                                    // Backed so the line passing under a low point can't hide its label.
                                     Text(WFmt.one(d.strain ?? 0)).font(W.num(13)).foregroundStyle(W.strain)
+                                        .padding(.horizontal, 4).padding(.vertical, 1)
+                                        .background(W.cardBottom.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))
                                 }
                         }
                     }
-                    .chartYScale(domain: 0...100)
+                    .chartYScale(domain: -6...112)
                     .chartXScale(domain: (days.first?.date ?? day)...(days.last?.date.addingTimeInterval(86_400) ?? day))
                     .chartYAxis {
                         AxisMarks(position: .leading, values: [0, 33.33, 66.67, 100]) { v in

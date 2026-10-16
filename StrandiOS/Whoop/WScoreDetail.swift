@@ -17,6 +17,7 @@ enum WRoute: Hashable {
     case healthMonitor
     case stress
     case healthspan
+    case leanFat
 }
 
 /// Destinations for the WHOOP-style stack, registered once at the root of each tab that uses them.
@@ -39,6 +40,8 @@ struct WRouteDestinations: ViewModifier {
                 WStressView()
             case .healthspan:
                 WHealthspanView()
+            case .leanFat:
+                WLeanFatView()
             }
         }
     }
@@ -52,9 +55,22 @@ struct WScoreDetail: View {
     @EnvironmentObject var data: WhoopData
     @EnvironmentObject var repo: Repository
     let score: WScore
-    let day: String
+    @State private var day: String
+
+    init(score: WScore, day: String) {
+        self.score = score
+        _day = State(initialValue: day)
+    }
 
     private var isToday: Bool { day == data.todayKey }
+
+    private func step(_ by: Int) {
+        guard let d = WFmt.dayDate(day), let n = Calendar.current.date(byAdding: .day, value: by, to: d) else { return }
+        let k = Repository.localDayKey(n)
+        guard k <= data.todayKey else { return }
+        WHaptics.select()
+        withAnimation(.easeInOut(duration: 0.2)) { day = k }
+    }
     private var title: String {
         guard !isToday, let d = WFmt.dayDate(day) else { return "Today" }
         return d.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
@@ -91,7 +107,22 @@ struct WScoreDetail: View {
             .padding(.horizontal, W.margin)
             .padding(.bottom, 40)
         }
-        .wPage(title: title)
+        .wPage()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 16) {
+                    Button { step(-1) } label: { Image(systemName: "chevron.left") }
+                    Text(title.uppercased()).font(W.caps(15)).tracking(1.6).frame(minWidth: 110)
+                    Button { step(1) } label: {
+                        Image(systemName: "chevron.right").foregroundStyle(isToday ? W.text3.opacity(0.5) : W.text)
+                    }
+                    .disabled(isToday)
+                }
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(W.text)
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     // MARK: Dial

@@ -253,7 +253,11 @@ struct SendHealthDataIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let starts = Self.dates(sleepStart), ends = Self.dates(sleepEnd)
         let window = Self.sleepWindow(starts: starts, ends: ends)
-        var day = ShortcutHealthImport.ParsedDay(day: Repository.localDayKey(window?.end ?? Date()))
+        var sleepDay = ShortcutHealthImport.ParsedDay(day: Repository.localDayKey(window?.end ?? Date()))
+        // Food, weight and body composition belong to the day the Shortcut runs ("Start Date is today");
+        // only the sleep window belongs to the morning it ended. Keyed apart so a late-night run whose
+        // sleep search still returns an earlier night can't file today's meals under that day.
+        var day = ShortcutHealthImport.ParsedDay(day: Repository.localDayKey(Date()))
         day.weightKg = Self.kilograms(weight)
         if let s = bodyFat?.trimmingCharacters(in: .whitespacesAndNewlines), let v = ShortcutHealthImport.leadingNumber(s) {
             let pct = v <= 1 ? v * 100 : v
@@ -270,9 +274,9 @@ struct SendHealthDataIntent: AppIntent {
         let nStarts = starts.count, nEnds = ends.count
         var sleepNote = "no sleep (both sleep fields were empty)"
         if let w = window {
-            day.sleepStartTs = Int(w.start.timeIntervalSince1970)
-            day.sleepEndTs = Int(w.end.timeIntervalSince1970)
-            day.asleepMin = w.asleepMin
+            sleepDay.sleepStartTs = Int(w.start.timeIntervalSince1970)
+            sleepDay.sleepEndTs = Int(w.end.timeIntervalSince1970)
+            sleepDay.asleepMin = w.asleepMin
             let f = DateFormatter(); f.dateFormat = "h:mm a"
             sleepNote = "sleep \(f.string(from: w.start))–\(f.string(from: w.end))"
             if let m = w.asleepMin { sleepNote += " (\(Int(m) / 60)h \(String(format: "%02ld", Int(m) % 60))m asleep)" }
@@ -285,7 +289,17 @@ struct SendHealthDataIntent: AppIntent {
         } else if !(sleepStart ?? "").isEmpty || !(sleepEnd ?? "").isEmpty {
             sleepNote = "sleep skipped: couldn't read the times (\(String((sleepStart ?? sleepEnd ?? "").prefix(40))))"
         }
-        guard day.hasAnyMetric else {
+        // Same day: one row. Different days: two rows, each with only its own fields.
+        var days: [ShortcutHealthImport.ParsedDay] = []
+        if sleepDay.day == day.day {
+            day.sleepStartTs = sleepDay.sleepStartTs
+            day.sleepEndTs = sleepDay.sleepEndTs
+            day.asleepMin = sleepDay.asleepMin
+        } else if sleepDay.hasAnyMetric {
+            days.append(sleepDay)
+        }
+        if day.hasAnyMetric { days.insert(day, at: 0) }
+        guard !days.isEmpty else {
             return .result(dialog: "Nothing to send: every field was empty. Check that Health has a weight or sleep reading in the range your Find steps use.")
         }
 
@@ -299,7 +313,7 @@ struct SendHealthDataIntent: AppIntent {
             return .result(dialog: "NOOP didn't start in time. Open NOOP once, then run the shortcut again.")
         }
         let pending = ShortcutHealthImport.PendingImport(
-            text: "intent", parsed: ShortcutHealthImport.Parsed(days: [day], workouts: []))
+            text: "intent", parsed: ShortcutHealthImport.Parsed(days: days, workouts: []))
         switch await model.importFromShortcutAction(pending) {
         case .imported:
             var parts: [String] = []

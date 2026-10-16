@@ -261,18 +261,37 @@ final class WhoopData: ObservableObject {
         return pts.last(where: { $0.level != nil })?.level
     }
 
+    /// "Today" or "Yesterday": which day `stress` describes. Early in the day there is too little heart
+    /// rate to score, so the monitor keeps showing yesterday until today has some.
+    @Published private(set) var stressDayLabel = "Today"
+
     func loadStress(_ repo: Repository) async {
         let cal = Calendar.current
-        let from = Int(cal.startOfDay(for: Date()).timeIntervalSince1970)
-        let to = Int(Date().timeIntervalSince1970)
+        let startToday = cal.startOfDay(for: Date())
         let tz = TimeZone.current.secondsFromGMT(for: Date())
-        let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-        guard hr.count >= DaytimeStress.minHourHRSamples else { stress = .empty; stressLoadedAt = Date(); return }
-        let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
-        let gravity = await repo.gravitySamplesUnion(from: from, to: to, limit: 200_000)
-        stress = await runUnescalated(priority: .userInitiated) {
-            DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: .dayRelative,
-                                  includeTimeline: true)
+        func analyze(from: Date, to: Date) async -> DaytimeStress.Result? {
+            let f = Int(from.timeIntervalSince1970), t = Int(to.timeIntervalSince1970)
+            let hr = await repo.hrSamples(from: f, to: t, limit: 200_000)
+            guard hr.count >= DaytimeStress.minHourHRSamples else { return nil }
+            let rr = await repo.rrIntervals(from: f, to: t, limit: 200_000)
+            let gravity = await repo.gravitySamplesUnion(from: f, to: t, limit: 200_000)
+            let r = await runUnescalated(priority: .userInitiated) {
+                DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: .dayRelative,
+                                      includeTimeline: true)
+            }
+            let scored = (r.timeline.isEmpty ? r.hours : r.timeline).contains { $0.level != nil }
+            return scored ? r : nil
+        }
+        if let today = await analyze(from: startToday, to: Date()) {
+            stress = today
+            stressDayLabel = "Today"
+        } else if let y = cal.date(byAdding: .day, value: -1, to: startToday),
+                  let yesterday = await analyze(from: y, to: startToday) {
+            stress = yesterday
+            stressDayLabel = "Yesterday"
+        } else {
+            stress = .empty
+            stressDayLabel = "Today"
         }
         stressLoadedAt = Date()
     }

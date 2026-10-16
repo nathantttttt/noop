@@ -1205,12 +1205,28 @@ final class AICoachEngine: ObservableObject {
         var out: [(role: ChatMessage.Role, content: String)] = []
         var contextInjected = false
         for m in windowedMessages() {
+            let text = m.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let content: String
             if m.role == .user && !contextInjected {
                 contextInjected = true
-                out.append((.user, context + "\n\n---\n\nQuestion: " + m.text))
+                content = context + "\n\n---\n\nQuestion: " + text
             } else {
-                out.append((m.role, m.text))
+                content = text
             }
+            // Turns must alternate: fold a repeat (e.g. questions left behind by failed sends) into the
+            // previous turn rather than sending two in a row.
+            if let last = out.last, last.role == m.role {
+                out[out.count - 1] = (last.role, last.content + "\n\n" + content)
+            } else {
+                out.append((m.role, content))
+            }
+        }
+        // Anthropic (and some OpenAI-compatible servers) reject a conversation that opens with the
+        // assistant, which is exactly what a surfaced "Today's brief" produces. Open with the request
+        // that brief answered.
+        if out.first?.role == .assistant {
+            out.insert((.user, "Give me today's brief."), at: 0)
         }
         return out
     }

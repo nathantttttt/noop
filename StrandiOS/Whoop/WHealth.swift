@@ -723,7 +723,7 @@ struct WStressCard: View {
                 WCardHeader(title: "Stress Monitor", chevron: true)
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("TODAY'S HIGH STRESS").font(W.caps(13)).tracking(1.3).foregroundStyle(W.text2)
+                        Text("\(data.stressDayLabel.uppercased())'S HIGH STRESS").font(W.caps(13)).tracking(1.3).foregroundStyle(W.text2)
                         HStack(alignment: .firstTextBaseline, spacing: 5) {
                             Text(mins.map { WFmt.hm(Double($0)) } ?? "--:--").font(W.num(30)).foregroundStyle(W.text)
                             Text("hrs").font(W.body(17)).foregroundStyle(W.text3)
@@ -733,7 +733,7 @@ struct WStressCard: View {
                     if let v = data.currentStress {
                         VStack(alignment: .trailing, spacing: 4) {
                             Text(WFmt.one(v)).font(W.num(30)).foregroundStyle(WStressBand.color(v))
-                            Text("NOW · " + WStressBand.word(v).uppercased()).font(W.caps(12)).tracking(1.2).foregroundStyle(W.text3)
+                            Text((data.stressDayLabel == "Today" ? "NOW · " : "LATEST · ") + WStressBand.word(v).uppercased()).font(W.caps(12)).tracking(1.2).foregroundStyle(W.text3)
                         }
                     }
                 }
@@ -761,7 +761,8 @@ struct WStressView: View {
                     VStack(spacing: 4) {
                         Text(v.map(WFmt.one) ?? "--").font(W.num(54, .heavy)).foregroundStyle(W.text)
                         Text(v.map { WStressBand.word($0).uppercased() } ?? "NO DATA").font(W.caps(15)).tracking(1.5).foregroundStyle(W.text)
-                        Text(Date().formatted(date: .omitted, time: .shortened)).font(W.body(14)).foregroundStyle(W.text3)
+                        Text(data.stressDayLabel == "Today" ? Date().formatted(date: .omitted, time: .shortened) : "Yesterday")
+                            .font(W.body(14)).foregroundStyle(W.text3)
                     }
                     .offset(y: 26)
                 }
@@ -775,7 +776,7 @@ struct WStressView: View {
                 chart
                 WCard {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("TODAY'S HIGH STRESS").font(W.caps(13)).tracking(1.3).foregroundStyle(W.text2)
+                        Text("\(data.stressDayLabel.uppercased())'S HIGH STRESS").font(W.caps(13)).tracking(1.3).foregroundStyle(W.text2)
                         HStack(alignment: .firstTextBaseline, spacing: 5) {
                             Text(data.stress.map { WFmt.hm(Double($0.highStressMinutes)) } ?? "--:--").font(W.num(34)).foregroundStyle(W.text)
                             Text("hrs").font(W.body(18)).foregroundStyle(W.text3)
