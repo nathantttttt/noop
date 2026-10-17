@@ -128,7 +128,7 @@ enum WCoachContext {
         let g = WSleepPlan.goals[WSleepPlan.goalIndex]
         out.append("Sleep planner tonight: needs \(WFmt.hm(plan.asleepNeed)) asleep (baseline \(WFmt.hm(plan.baseline)) + strain \(WFmt.hm(plan.strainAdd)) + debt repayment \(WFmt.hm(plan.debtRepay)) of \(WFmt.hm(plan.debt)) weighted 7-night debt); \(g.name) bedtime \(plan.bedtime(g.pct).formatted(date: .omitted, time: .shortened)) for a \(plan.wake.formatted(date: .omitted, time: .shortened)) wake.")
 
-        out.append("Training plan: either Workout A/B alternating Tue/Thu/Sat, or the 4-day V-taper plan (Upper A, Lower + delts, Upper B, Arms + delts) — the lift sessions above show which. Goals: the most muscle possible for a V-taper (side delts, chest, lats, arms, forearms) with a lean waist; also lower resting HR, raise HRV, lower body fat, raise lean mass. Calories are tracked in MacroFactor.")
+        out.append("Training plan: full body every other day, alternating Workout A (chest + lats focus) and Workout B (shoulders + back focus), machine and cable based, one dumbbell lift (incline press). New to the gym. Gym has: leg press, leg curl, leg extension, lat pulldown, shoulder press machine, chest press machine, adjustable bench, dumbbells, dual cable station with attachments, chest-supported row, assisted dip/pull-up, captain's chair. Goals: the most muscle possible for a V-taper (side delts, chest, lats, arms, forearms) with a lean waist; also lower resting HR, raise HRV, lower body fat, raise lean mass. Calories are tracked in MacroFactor.")
         return out.joined(separator: "\n")
     }
 }
