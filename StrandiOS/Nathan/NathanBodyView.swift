@@ -284,21 +284,25 @@ struct NathanProgressPhotos: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     VStack(spacing: 8) {
-                        // Tap opens the camera straight away; the library stays one tap below it.
                         Button { showCamera = true } label: {
-                            VStack(spacing: 8) {
-                                Image(systemName: "camera").font(.system(size: 24))
-                                Text("Take photo").font(.system(size: 13, weight: .semibold))
+                            VStack(spacing: 6) {
+                                Image(systemName: "camera").font(.system(size: 22))
+                                Text("Camera").font(.system(size: 13, weight: .semibold))
+                                Text("Timer · ghost").font(.system(size: 10)).foregroundStyle(NathanStyle.text3)
                             }
                             .foregroundStyle(NathanStyle.text2)
-                            .frame(width: 104, height: 112)
+                            .frame(width: 104, height: 71)
                             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NathanStyle.text3, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
                         }
                         .buttonStyle(.plain)
                         PhotosPicker(selection: $picked, matching: .images) {
-                            Text("From library").font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(NathanStyle.text3)
-                                .frame(width: 104, height: 30)
+                            VStack(spacing: 6) {
+                                Image(systemName: "photo.on.rectangle").font(.system(size: 22))
+                                Text("Library").font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundStyle(NathanStyle.text2)
+                            .frame(width: 104, height: 71)
+                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NathanStyle.text3, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
                         }
                     }
                     ForEach(photos) { p in
@@ -327,8 +331,7 @@ struct NathanProgressPhotos: View {
             NathanPhotoCompare(older: p, newer: photos.first ?? p, caption: caption)
         }
         .fullScreenCover(isPresented: $showCamera) {
-            WCameraPicker { img in store(img) }
-                .ignoresSafeArea()
+            WCameraView(ghost: photos.first.flatMap { UIImage(contentsOfFile: $0.url.path) }) { img in store(img) }
         }
     }
 
