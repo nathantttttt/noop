@@ -174,28 +174,32 @@ struct WScoreDetail: View {
         let title: String
         let value: String?
         let good: Bool?
+        var up: Bool? = nil        // which way it moved vs. the 30-day baseline
     }
 
-    private func compare(_ m: WMetric) -> (String?, Bool?) {
-        guard let v = data.value(m, day) else { return (nil, nil) }
-        var good: Bool?
-        if let b = data.baseline(m, before: day), m.better != .neither {
+    private func compare(_ m: WMetric) -> (String?, Bool?, Bool?) {
+        guard let v = data.value(m, day) else { return (nil, nil, nil) }
+        var good: Bool?, up: Bool?
+        if let b = data.baseline(m, before: day) {
             let diff = v - b
-            if abs(diff) > max(abs(b) * 0.03, 0.0001) { good = m.better == .up ? diff > 0 : diff < 0 }
+            if abs(diff) > max(abs(b) * 0.03, 0.0001) {
+                up = diff > 0
+                if m.better != .neither { good = m.better == .up ? diff > 0 : diff < 0 }
+            }
         }
         let unit = m.unit == "%" ? "%" : (m.isDuration || m.unit.isEmpty || m.unit == "Steps" ? "" : " " + m.unit)
-        return ((m.isDuration ? WFmt.hm(v) : m.format(v)) + unit, good)
+        return ((m.isDuration ? WFmt.hm(v) : m.format(v)) + unit, good, up)
     }
 
     private var rows: [Row] {
         func row(_ m: WMetric, _ title: String? = nil, icon: String? = nil) -> Row {
-            let (v, g) = compare(m)
-            return Row(id: m.rawValue, icon: icon ?? m.icon, title: title ?? m.title, value: v, good: g)
+            let (v, g, u) = compare(m)
+            return Row(id: m.rawValue, icon: icon ?? m.icon, title: title ?? m.title, value: v, good: g, up: u)
         }
         switch score {
         case .sleep:
-            return [row(.hoursVsNeededPct, "Hours vs. Needed"), row(.sleepConsistency), row(.sleepEfficiency),
-                    row(.restorative, "Restorative Sleep")]
+            return [row(.hoursVsNeededPct, "Hours vs. Needed"), row(.restorative, "Restorative Sleep"),
+                    row(.sleepEfficiency), row(.sleepConsistency), row(.hrv), row(.rhr)]
         case .recovery:
             return [row(.hrv), row(.rhr), row(.respRate), row(.sleepPerformance)]
         case .strain:
@@ -214,9 +218,11 @@ struct WScoreDetail: View {
                         Text(r.title.uppercased()).font(W.caps(14)).tracking(1.3).foregroundStyle(W.text)
                             .lineLimit(1).minimumScaleFactor(0.75)
                         Spacer(minLength: 6)
-                        if let g = r.good {
-                            Image(systemName: g ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                                .font(.system(size: 9)).foregroundStyle(g ? W.mint : W.orange)
+                        if let u = r.up {
+                            // Direction is the actual move; colour is whether that move is good for this
+                            // metric (resting HR rising is an orange UP arrow, HRV falling an orange DOWN).
+                            Image(systemName: u ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                                .font(.system(size: 9)).foregroundStyle(r.good == nil ? W.text3 : (r.good! ? W.mint : W.orange))
                         }
                         Text(r.value ?? "--").font(W.num(20)).foregroundStyle(r.value == nil ? W.text3 : W.text)
                     }
@@ -226,7 +232,7 @@ struct WScoreDetail: View {
                 .buttonStyle(.plain)
                 if i < rows.count - 1 { Rectangle().fill(W.hairline).frame(height: 1) }
             }
-            if score != .sleep {
+            Group {
                 HStack(spacing: 8) {
                     HStack(spacing: 1) {
                         Image(systemName: "arrowtriangle.up.fill").foregroundStyle(W.mint)
@@ -573,11 +579,6 @@ struct WMatCompareCard: View {
                         }
                         WSegmented(options: [(0, "FELL ASLEEP"), (1, "WOKE UP")], selection: $which)
                         chart(ns)
-                        HStack(spacing: 16) {
-                            WLegend(color: W.hours, label: "Strap", ring: true)
-                            WLegend(color: W.mint, label: "Sleep mat", ring: true)
-                            Spacer()
-                        }
                         if !diffs.isEmpty {
                             let avg = diffs.reduce(0, +) / Double(diffs.count)
                             Text("Over \(diffs.count) night\(diffs.count == 1 ? "" : "s") with both, the \(which == 0 ? "sleep onset" : "wake time") differed by \(Int(avg.rounded())) min on average and agreed within 30 min on \(agree) of \(diffs.count).")
@@ -599,56 +600,87 @@ struct WMatCompareCard: View {
         }
     }
 
-    private struct Dot: Identifiable { let id: String; let date: Date; let y: Double; let src: String }
+    private struct Gap: Identifiable { let id: String; let date: Date; let minutes: Double }
 
-    @ViewBuilder private func chart(_ ns: [Night]) -> some View {
-        let dots: [Dot] = ns.flatMap { n -> [Dot] in
+    /// Minutes the mat reading sits after (+) or before (−) the strap's, per night with both.
+    private func gaps(_ ns: [Night]) -> [Gap] {
+        ns.compactMap { n in
             let s = which == 0 ? n.strapOn : n.strapOff
             let m = which == 0 ? n.matOn : n.matOff
-            var out: [Dot] = []
-            // Negated so earlier times sit higher on the chart.
-            if let s { out.append(Dot(id: n.id + "s", date: n.date, y: -Self.clockMinutes(s), src: "Strap")) }
-            if let m { out.append(Dot(id: n.id + "m", date: n.date, y: -Self.clockMinutes(m), src: "Mat")) }
-            return out
+            guard let s, let m else { return nil }
+            return Gap(id: n.id, date: n.date, minutes: (m - s) / 60)
         }
-        if dots.isEmpty {
-            WNoData(height: 160)
+    }
+
+    @ViewBuilder private func chart(_ ns: [Night]) -> some View {
+        let gs = gaps(ns)
+        if gs.isEmpty {
+            WNoData(height: 140)
         } else {
-            let ys = dots.map(\.y)
-            let lo = (ys.min() ?? 0) - 45, hi = (ys.max() ?? 0) + 45
+            let top = max(30, gs.map { abs($0.minutes) }.max() ?? 30) * 1.3
             Chart {
-                ForEach(ns) { n in
-                    let s = which == 0 ? n.strapOn : n.strapOff
-                    let m = which == 0 ? n.matOn : n.matOff
-                    if let s, let m {
-                        RuleMark(x: .value("Night", n.date, unit: .day),
-                                 yStart: .value("A", -Self.clockMinutes(s)), yEnd: .value("B", -Self.clockMinutes(m)))
-                            .foregroundStyle(Color.white.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 2))
-                    }
-                }
-                ForEach(dots) { d in
-                    PointMark(x: .value("Night", d.date, unit: .day), y: .value("Time", d.y))
-                        .symbol {
-                            Circle().fill(W.bgMid)
-                                .overlay(Circle().stroke(d.src == "Strap" ? W.hours : W.mint, lineWidth: 2.5))
-                                .frame(width: 11, height: 11)
+                RectangleMark(xStart: .value("A", gs.first!.date), xEnd: .value("B", gs.last!.date.addingTimeInterval(86_400)),
+                              yStart: .value("Lo", -30), yEnd: .value("Hi", 30))
+                    .foregroundStyle(W.mint.opacity(0.08))
+                RuleMark(y: .value("Zero", 0)).foregroundStyle(Color.white.opacity(0.35)).lineStyle(StrokeStyle(lineWidth: 1))
+                ForEach(gs) { g in
+                    BarMark(x: .value("Night", g.date, unit: .day), yStart: .value("0", 0), yEnd: .value("Gap", g.minutes),
+                            width: .ratio(0.5))
+                        .foregroundStyle(abs(g.minutes) <= 30 ? W.mint : W.orange)
+                        .cornerRadius(3)
+                        .annotation(position: g.minutes >= 0 ? .top : .bottom, spacing: 3) {
+                            Text("\(g.minutes >= 0 ? "+" : "−")\(Int(abs(g.minutes).rounded()))m")
+                                .font(W.num(13)).foregroundStyle(abs(g.minutes) <= 30 ? W.mint : W.orange)
                         }
                 }
             }
-            .chartYScale(domain: lo...hi)
+            .chartYScale(domain: -top...top)
             .chartYAxis {
-                AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
+                AxisMarks(position: .leading, values: [-60.0, -30, 0, 30, 60].filter { abs($0) < top }) { v in
                     AxisGridLine().foregroundStyle(W.grid)
-                    AxisValueLabel { if let m = v.as(Double.self) { Text(Self.clockLabel(-m)) } }
+                    AxisValueLabel { if let m = v.as(Double.self) { Text(m == 0 ? "0" : "\(m > 0 ? "+" : "")\(Int(m))m") } }
                         .font(W.caps(11, .semibold)).foregroundStyle(W.text3)
                 }
             }
             .chartXAxis {
-                AxisMarks(values: .stride(by: .day, count: 2)) { _ in
-                    AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(W.caps(11, .semibold)).foregroundStyle(W.text3)
+                AxisMarks(values: .stride(by: .day, count: max(1, gs.count / 6))) { _ in
+                    AxisValueLabel(format: .dateTime.weekday(.abbreviated)).font(W.caps(11, .semibold)).foregroundStyle(W.text3)
                 }
             }
-            .frame(height: 200)
+            .frame(height: 190)
+            Text("Bars show how many minutes the mat's \(which == 0 ? "sleep onset" : "wake-up") came after (+) or before (−) the strap's. The green band is within 30 minutes.")
+                .font(W.body(13)).foregroundStyle(W.text3).fixedSize(horizontal: false, vertical: true)
+            nightTable(ns)
+        }
+    }
+
+    private func nightTable(_ ns: [Night]) -> some View {
+        let rows = Array(ns.reversed().prefix(7))
+        return VStack(spacing: 0) {
+            HStack {
+                Text("NIGHT").frame(maxWidth: .infinity, alignment: .leading)
+                Text("STRAP").frame(width: 76, alignment: .trailing)
+                Text("MAT").frame(width: 76, alignment: .trailing)
+                Text("GAP").frame(width: 52, alignment: .trailing)
+            }
+            .font(W.caps(11)).tracking(1).foregroundStyle(W.text3).padding(.vertical, 8)
+            ForEach(rows) { n in
+                let s = which == 0 ? n.strapOn : n.strapOff
+                let m = which == 0 ? n.matOn : n.matOff
+                Rectangle().fill(W.hairline).frame(height: 1)
+                HStack {
+                    Text(n.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(s.map { WFmt.clock(Int($0)) } ?? "--").foregroundStyle(W.hours).frame(width: 76, alignment: .trailing)
+                    Text(m.map { WFmt.clock(Int($0)) } ?? "--").foregroundStyle(W.mint).frame(width: 76, alignment: .trailing)
+                    if let s, let m {
+                        let d = (m - s) / 60
+                        Text("\(Int(abs(d).rounded()))m").foregroundStyle(abs(d) <= 30 ? W.mint : W.orange).frame(width: 52, alignment: .trailing)
+                    } else {
+                        Text("--").foregroundStyle(W.text3).frame(width: 52, alignment: .trailing)
+                    }
+                }
+                .font(W.num(14)).foregroundStyle(W.text).padding(.vertical, 10)
+            }
         }
     }
 

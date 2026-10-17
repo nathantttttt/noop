@@ -106,8 +106,10 @@ struct WHomeView: View {
         let back = dayOffset == 0 ? 2 : 0
         switch s {
         case .sleep:
+            // Today's score first (from either source), and only then fall back to an earlier night.
+            if let v = data.value(.sleepPerformance, dayKey) { return (v, dayKey) }
+            if let v = data.value(.hoursVsNeededPct, dayKey) { return (min(100, v), dayKey) }
             return data.carried(.sleepPerformance, dayKey, maxBack: back)
-                ?? data.carried(.hoursVsNeededPct, dayKey, maxBack: back).map { (value: min(100, $0.value), day: $0.day) }
         case .recovery: return data.carried(.recovery, dayKey, maxBack: back)
         case .strain: return data.carried(.strain, dayKey, maxBack: back)
         }
@@ -210,7 +212,7 @@ struct WHomeView: View {
         }
     }
 
-    private func rowValue(_ m: WMetric) -> (String, Bool?)? {
+    private func rowValue(_ m: WMetric) -> (String, Bool?, Bool?)? {
         let weekly = m == .zones13 || m == .zones45 || m == .strengthTime
         let v: Double?
         var asOfDay: String?
@@ -223,13 +225,14 @@ struct WHomeView: View {
             asOfDay = c?.day
         }
         guard let v else { return nil }
-        var good: Bool?
+        var good: Bool?, up: Bool?
         let ref = asOfDay ?? dayKey
-        if !weekly, let b = data.baseline(m, before: ref), m.better != .neither, abs(v - b) > max(abs(b) * 0.03, 0.0001) {
-            good = m.better == .up ? v > b : v < b
+        if !weekly, let b = data.baseline(m, before: ref), abs(v - b) > max(abs(b) * 0.03, 0.0001) {
+            up = v > b
+            if m.better != .neither { good = m.better == .up ? v > b : v < b }
         }
         let unit = m.unit == "%" ? "%" : ""
-        return ((m.isDuration ? WFmt.hm(v) : m.format(v)) + unit, good)
+        return ((m.isDuration ? WFmt.hm(v) : m.format(v)) + unit, good, up)
     }
 
     /// Small "YESTERDAY" / weekday tag on a carried value; "STALE" when it is older than 30 hours.
@@ -253,9 +256,9 @@ struct WHomeView: View {
                 if let tag = rowAsOf(m) {
                     Text(tag).font(W.caps(10)).tracking(0.8).foregroundStyle(tag == "STALE" ? W.orange : W.text3)
                 }
-                if let g = rv.1 {
-                    Image(systemName: g ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                        .font(.system(size: 8)).foregroundStyle(g ? W.mint : W.orange)
+                if let u = rv.2 {
+                    Image(systemName: u ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                        .font(.system(size: 8)).foregroundStyle(rv.1 == nil ? W.text3 : (rv.1! ? W.mint : W.orange))
                 }
                 Text(rv.0).font(W.num(19)).foregroundStyle(W.text)
             }

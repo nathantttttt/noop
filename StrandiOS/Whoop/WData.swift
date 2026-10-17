@@ -187,7 +187,7 @@ enum WMetric: String, CaseIterable, Hashable, Identifiable {
     /// WHOOP's one-liner under the selector, in NOOP's own words.
     var blurb: String {
         switch self {
-        case .sleepPerformance: "Sleep Performance compares the sleep you got with the sleep your body needed."
+        case .sleepPerformance: "NOOP's sleep score: how much of the sleep you needed you got (45%), how restorative (15%), efficient (10%) and regular (10%) it was, and how your overnight HRV and resting heart rate compare with your normal (10% each)."
         case .hoursVsNeeded: "Aim to match your Hours of Sleep with your Sleep Need to avoid Sleep Debt."
         case .hoursVsNeededPct: "Good sleep speeds up recovery, supports your immune system and boosts fitness gains."
         case .restorative: "Restorative sleep (deep plus REM) is when your body repairs itself. Get enough of it to maximize Recovery."
@@ -230,6 +230,8 @@ final class WhoopData: ObservableObject {
     @Published private(set) var rem: [String: Double] = [:]
     @Published private(set) var workouts: [WorkoutRow] = []
     @Published private(set) var loadedSeq = -1
+    /// Each night's sleep-score components (0…1), for the Sleep page breakdown.
+    @Published private(set) var sleepParts: [String: [String: Double]] = [:]
     /// Per-workout zone minutes computed from strap HR, kept across reloads (a finished session's HR
     /// does not change).
     private var zoneCache: [String: [Double]] = [:]
@@ -467,6 +469,40 @@ final class WhoopData: ObservableObject {
                 }
             }
         }
+
+        // NOOP sleep score (Nathan's build): how much of the sleep you needed you got, how restorative and
+        // efficient it was, how regular, and what your overnight HRV and resting HR say about it, each
+        // against your own last 30 nights. Missing parts drop out and the rest re-weight.
+        var parts: [String: [String: Double]] = [:]
+        func baseline(_ m: WMetric, _ k: String) -> Double? {
+            guard let d = WFmt.dayDate(k) else { return nil }
+            let xs = (1...30).compactMap { b in
+                Calendar.current.date(byAdding: .day, value: -b, to: d).flatMap { out[m]?[Repository.localDayKey($0)] }
+            }
+            return xs.count >= 5 ? xs.reduce(0, +) / Double(xs.count) : nil
+        }
+        for (k, asleep) in out[.hoursVsNeeded] ?? [:] where asleep >= 60 {
+            var p: [String: Double] = [:]
+            let needMin = needS[k] ?? 8 * 60
+            p["sufficiency"] = min(1, asleep / max(needMin, 1))
+            if let dp = deepD[k], let rm = remD[k] { p["restorative"] = min(1, (dp + rm) / asleep / 0.45) }
+            if let e = out[.sleepEfficiency]?[k] { p["efficiency"] = max(0, min(1, (e - 70) / 25)) }
+            if let c = out[.sleepConsistency]?[k] { p["consistency"] = max(0, min(1, c / 100)) }
+            if let h = out[.hrv]?[k], let b = baseline(.hrv, k), b > 0 {
+                p["hrv"] = max(0, min(1, 1 + (h - b) / b / 0.25))       // full at or above baseline, 0 at 25% below
+            }
+            if let r = out[.rhr]?[k], let b = baseline(.rhr, k), b > 0 {
+                p["rhr"] = max(0, min(1, 1 - (r - b) / b / 0.10))       // full at or below baseline, 0 at 10% above
+            }
+            let weights: [String: Double] = ["sufficiency": 0.45, "restorative": 0.15, "efficiency": 0.10,
+                                             "consistency": 0.10, "hrv": 0.10, "rhr": 0.10]
+            let wsum = p.keys.compactMap { weights[$0] }.reduce(0, +)
+            guard wsum > 0 else { continue }
+            let score = p.reduce(0) { $0 + (weights[$1.key] ?? 0) * $1.value } / wsum * 100
+            out[.sleepPerformance, default: [:]][k] = score
+            parts[k] = p
+        }
+        sleepParts = parts
 
         series = out
         need = needS
