@@ -230,6 +230,7 @@ struct LiftProgramImportSheet: View {
         defer { importing = false }
 
         let now = Int(Date().timeIntervalSince1970)
+        let logged = await lastLoggedWeights(store: store, now: now)
         for program in result.programs {
             let programId = UUID().uuidString
             _ = try? await store.upsertLiftPrograms([LiftProgramRow(
@@ -244,7 +245,9 @@ struct LiftProgramImportSheet: View {
                     // The sheet plans ONE rep count, which is what the editor plans too; the range's
                     // high end stays nil rather than inventing a spread nobody typed.
                     targetRepsLow: line.targetReps, targetRepsHigh: nil, targetRpe: line.targetMaxRpe,
-                    targetWeightKg: line.targetWeightKg,
+                    // Nathan's build: an exercise already in the Lift Log starts at the weight last
+                    // lifted for it, so a new program picks up where the old one left off.
+                    targetWeightKg: logged[Self.key(line.exercise)] ?? line.targetWeightKg,
                     restSec: line.restSec, note: line.note)
             }
             _ = try? await store.replaceLiftProgramItems(programId: programId, items: items)
@@ -265,5 +268,26 @@ struct LiftProgramImportSheet: View {
 
         await onImported()
         dismiss()
+    }
+
+    private static func key(_ exercise: String) -> String {
+        exercise.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// The working weight from the most recent session of each exercise in the last 180 days: that
+    /// session's heaviest set that was actually done (warm-ups and empty sets skipped).
+    private func lastLoggedWeights(store: WhoopStore, now: Int) async -> [String: Double] {
+        let sessions = (try? await store.liftSessions(deviceId: repo.deviceId, fromTs: now - 180 * 86_400, toTs: now)) ?? []
+        var out: [String: Double] = [:]
+        for s in sessions.sorted(by: { $0.startTs > $1.startTs }) {
+            var best: [String: Double] = [:]
+            for set in (try? await store.liftSets(sessionId: s.id)) ?? [] where !set.isWarmup && (set.reps ?? 0) > 0 {
+                guard let kg = set.weightKg, kg > 0 else { continue }
+                let k = Self.key(set.exercise)
+                best[k] = max(best[k] ?? 0, kg)
+            }
+            for (k, kg) in best where out[k] == nil { out[k] = kg }
+        }
+        return out
     }
 }
