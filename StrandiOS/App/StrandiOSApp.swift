@@ -103,6 +103,12 @@ struct StrandiOSApp: App {
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
+        // Nathan's build: the morning summary watches for the synced night; the weekly report's Sunday
+        // notification opens its page.
+        WMorningSummary.start(model.repo)
+        NotificationPresenter.shared.onOtherTapped = { category in
+            if category == "w.weekly" { WDeepLink.shared.weeklyReport += 1 }
+        }
         CoachBriefScheduler.register(generateBrief: { [weak coach = model.coach] in
             await coach?.generateBrief()
         }, log: { [weak model] line in

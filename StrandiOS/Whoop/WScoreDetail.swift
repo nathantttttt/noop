@@ -6,6 +6,7 @@
 import SwiftUI
 import Charts
 import WhoopStore
+import StrandDesign
 
 enum WScore: String, Hashable { case sleep, recovery, strain }
 
@@ -18,6 +19,8 @@ enum WRoute: Hashable {
     case stress
     case healthspan
     case leanFat
+    case sleepPlanner
+    case weeklyReport
 }
 
 /// Destinations for the WHOOP-style stack, registered once at the root of each tab that uses them.
@@ -42,6 +45,10 @@ struct WRouteDestinations: ViewModifier {
                 WHealthspanView()
             case .leanFat:
                 WLeanFatView()
+            case .sleepPlanner:
+                WSleepPlannerView()
+            case .weeklyReport:
+                WWeeklyReportView()
             }
         }
     }
@@ -269,6 +276,7 @@ struct WScoreDetail: View {
         WSectionTitle(title: "Last Night's Sleep", subtitle: nil)
         Text(isToday ? "Today" : "This night").font(W.body(16, .semibold)).foregroundColor(W.text)
             + Text(" vs. prior 30 days").font(W.body(16)).foregroundColor(W.text3)
+        if isToday { WSleepPlannerCard() }
         statCard(.hoursVsNeeded, title: "Hours of Sleep")
         needCard
         statCard(.sleepConsistency)
@@ -463,7 +471,12 @@ struct WSleepNightCard: View {
         WCard {
             VStack(alignment: .leading, spacing: 16) {
                 WCardHeader(title: "Sleep Stages")
+                if let segs = SleepView.decodeSegments(night.stagesJSON, sessionStart: night.effectiveStartTs)?.intervals,
+                   !segs.isEmpty {
+                    WHypnogram(intervals: segs, start: night.effectiveStartTs, end: night.endTs)
+                }
                 if hr.count >= 4 {
+                    Text("HEART RATE").font(W.caps(12, .semibold)).tracking(1.2).foregroundStyle(W.text3)
                     NathanScrubHRChart(points: hr, height: 170, color: W.hours, restingLine: night.restingHr, markLow: true)
                     HStack {
                         Text(WFmt.clock(night.effectiveStartTs)); Spacer(); Text(WFmt.clock(night.endTs))
@@ -500,6 +513,101 @@ struct WSleepNightCard: View {
                 }
             }
             .frame(height: 10)
+        }
+    }
+}
+
+/// The night as a stage staircase: four lanes (awake on top, deep at the bottom), one bar per stage
+/// interval with its width tracking duration, thin risers between stages. Drag to read the stage and
+/// clock time under your finger.
+struct WHypnogram: View {
+    let intervals: [SleepInterval]
+    let start: Int
+    let end: Int
+    @State private var probe: Double? = nil   // seconds from start
+
+    private static let lanes: [SleepStage] = [.awake, .rem, .light, .deep]
+    static func color(_ s: SleepStage) -> Color {
+        switch s {
+        case .awake: return W.hex(0xB9C2C9)
+        case .rem: return W.rem
+        case .light: return W.sleep
+        case .deep: return W.deep
+        }
+    }
+    private var span: Double { max(60, Double(end - start)) }
+    private var sorted: [SleepInterval] { intervals.sorted { $0.start < $1.start } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                if let p = probe, let iv = sorted.last(where: { $0.start <= p }) {
+                    Circle().fill(Self.color(iv.stage)).frame(width: 8, height: 8)
+                    Text(iv.stage.label.uppercased()).font(W.caps(12, .semibold)).foregroundStyle(W.text)
+                    Text(WFmt.clock(start + Int(p))).font(W.caps(12)).foregroundStyle(W.text3)
+                    Text("· \(WFmt.hm(iv.duration / 60))").font(W.caps(12)).foregroundStyle(W.text3)
+                } else {
+                    Text("DRAG TO SEE EACH STAGE").font(W.caps(11)).tracking(1).foregroundStyle(W.text3)
+                }
+                Spacer()
+            }
+            .frame(height: 16)
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .trailing, spacing: 0) {
+                    ForEach(Self.lanes, id: \.self) { l in
+                        Text(l == .deep ? "SWS" : l.label.uppercased())
+                            .font(W.caps(10, .semibold)).foregroundStyle(Self.color(l))
+                            .frame(width: 36, height: 30, alignment: .trailing)
+                    }
+                }
+                GeometryReader { g in
+                    let w = g.size.width, laneH = g.size.height / 4
+                    ZStack(alignment: .topLeading) {
+                        Canvas { ctx, size in
+                            for i in 0..<4 {
+                                let r = CGRect(x: 0, y: CGFloat(i) * laneH + laneH * 0.2, width: size.width, height: laneH * 0.6)
+                                ctx.fill(Path(roundedRect: r, cornerRadius: 3), with: .color(.white.opacity(0.04)))
+                            }
+                            var prev: (x: CGFloat, y: CGFloat, c: Color)? = nil
+                            for iv in sorted {
+                                let rank = CGFloat(Self.lanes.firstIndex(of: iv.stage) ?? 2)
+                                let x0 = CGFloat(iv.start / span) * size.width
+                                let x1 = max(x0 + 1.5, CGFloat(iv.end / span) * size.width)
+                                let y = rank * laneH + laneH * 0.2
+                                let c = Self.color(iv.stage)
+                                if let p = prev, abs(p.y - y) > 1 {
+                                    var riser = Path()
+                                    riser.move(to: CGPoint(x: x0, y: min(p.y, y) + laneH * 0.3))
+                                    riser.addLine(to: CGPoint(x: x0, y: max(p.y, y) + laneH * 0.3))
+                                    ctx.stroke(riser, with: .color(.white.opacity(0.18)), lineWidth: 1)
+                                }
+                                ctx.fill(Path(roundedRect: CGRect(x: x0, y: y, width: x1 - x0, height: laneH * 0.6), cornerRadius: 2),
+                                         with: .color(c))
+                                prev = (x1, y, c)
+                            }
+                        }
+                        if let p = probe {
+                            Rectangle().fill(Color.white.opacity(0.7)).frame(width: 1, height: g.size.height)
+                                .offset(x: CGFloat(p / span) * w)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 8)
+                        .onChanged { v in
+                            let t = min(span, max(0, Double(v.location.x / w) * span))
+                            let before = probe.flatMap { pp in sorted.last(where: { $0.start <= pp })?.id }
+                            probe = t
+                            if sorted.last(where: { $0.start <= t })?.id != before { WHaptics.tick() }
+                        }
+                        .onEnded { _ in probe = nil })
+                }
+                .frame(height: 120)
+            }
+            HStack {
+                Text(WFmt.clock(start)); Spacer(); Text(WFmt.clock(end))
+            }
+            .font(W.caps(12, .semibold)).foregroundStyle(W.text3)
+            .padding(.leading, 44)
         }
     }
 }

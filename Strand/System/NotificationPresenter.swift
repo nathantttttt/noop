@@ -22,6 +22,8 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     /// is a safe no-op (the tap is simply not routed) rather than a crash if this ever fires before the
     /// root has wired it.
     var onCoachBriefTapped: (() -> Void)?
+    /// Nathan's build: any other tapped notification, by category id (the weekly report opens its page).
+    var onOtherTapped: ((String) -> Void)?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -41,6 +43,8 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     ) {
         if response.notification.request.content.categoryIdentifier == CoachBriefScheduler.notificationCategoryId {
             onCoachBriefTapped?()
+        } else {
+            onOtherTapped?(response.notification.request.content.categoryIdentifier)
         }
         completionHandler()
     }

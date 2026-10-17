@@ -1,6 +1,7 @@
 #if os(iOS)
 import SwiftUI
 import StrandDesign
+import Combine
 
 /// iOS navigation shell. macOS uses a `NavigationSplitView` sidebar (`RootView`); on iPhone the
 /// natural analogue is a `TabView` with the most-used screens as tabs and everything else under a
@@ -144,6 +145,12 @@ struct RootTabView: View {
             await whoopData.loadStress(repo)
             let data = whoopData, r = repo, p = profile
             AICoachEngine.extraContext = { await WCoachContext.build(data: data, repo: r, age: p.age) }
+            WSleepPlan.scheduleReminder(WSleepPlan.make(data: data, repo: r))
+        }
+        .onReceive(WDeepLink.shared.$weeklyReport.dropFirst()) { _ in
+            selectedTab = 0
+            tabPaths[0] = NavigationPath()
+            tabPaths[0].append(WRoute.weeklyReport)
         }
         .environment(\.nathanSelectTab, { tag in
             withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = tag }
@@ -466,6 +473,13 @@ struct RootTabView: View {
               VStack(alignment: .leading, spacing: 24) {
                 Text("MORE").font(W.caps(15)).tracking(1.6).foregroundStyle(W.text)
                     .frame(maxWidth: .infinity).padding(.top, 8)
+                moreSection("Reports") {
+                    MoreRow("Sleep Planner", "moon.zzz", .sleepPlanner)
+                    MoreRow("Weekly Report", "calendar.badge.checkmark", .weeklyReport)
+                    MoreToggleRow(title: "Morning summary", icon: "sun.horizon",
+                                  note: "A notification once your night syncs: sleep, recovery, strain target.",
+                                  key: WMorningSummary.enabledKey)
+                }
                 moreSection("Classic screens") {
                     MoreRow("My settings", "slider.horizontal.3", .nathanSettings)
                     MoreRow("Journal Impacts", "book.closed", .nathanJournal)
@@ -613,7 +627,7 @@ struct RootTabView: View {
 /// per-screen chrome the old inline links applied lives at the single `navigationDestination(for:)`
 /// registration in `moreTab`.
 private enum MoreDestination: Hashable {
-    case trends, classicToday, classicSleep, nathanSettings, nathanJournal
+    case trends, classicToday, classicSleep, nathanSettings, nathanJournal, sleepPlanner, weeklyReport
     case insightsHub, intelligence, coach, insights, explore, compare
     case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
@@ -624,6 +638,8 @@ private enum MoreDestination: Hashable {
         case .trends:          TrendsView()
         case .nathanSettings:  NathanSettingsView()
         case .nathanJournal:   WJournalImpacts()
+        case .sleepPlanner:    WSleepPlannerView()
+        case .weeklyReport:    WWeeklyReportView()
         case .classicToday:    TodayView()
         case .classicSleep:    SleepView()
         case .insightsHub:     InsightsHubView()
@@ -663,6 +679,35 @@ private enum MoreDestination: Hashable {
 /// the SF Symbol icon tinted `StrandPalette.accent`, the title in the body text colour, a `Spacer`, and a
 /// trailing `chevron.right` in `textTertiary`. ~44pt min height + the card's row insets keep the whole row a
 /// comfortable tap target.
+/// A switch in the More list, styled like the rows around it.
+private struct MoreToggleRow: View {
+    let title: String
+    let icon: String
+    let note: String
+    let key: String
+    @State private var on = true
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .light))
+                .foregroundStyle(W.text2)
+                .frame(width: 26, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(W.body(17)).foregroundStyle(W.text)
+                Text(note).font(W.body(12)).foregroundStyle(W.text3).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: $on).labelsHidden().tint(W.mint)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
+        .onAppear { on = UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+        .onChange(of: on) { _, v in UserDefaults.standard.set(v, forKey: key) }
+    }
+}
+
 private struct MoreRow: View {
     let title: LocalizedStringKey
     let icon: String

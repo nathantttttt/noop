@@ -44,7 +44,11 @@ struct WHomeView: View {
                     activities
                     monitors
                     NathanSignalsCard()
+                    if dayOffset == 0, [1, 2].contains(Calendar.current.component(.weekday, from: Date())) {
+                        WWeeklyReportCard()
+                    }
                     dashboard
+                    if dayOffset == 0 { WSleepPlannerCard() }
                     strainRecovery
                     nutrition
                     journalCard

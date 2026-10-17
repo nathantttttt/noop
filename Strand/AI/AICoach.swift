@@ -971,6 +971,18 @@ final class AICoachEngine: ObservableObject {
         return clean.isEmpty ? nil : clean
     }
 
+    /// Nathan's build: a one-off answer to `instruction` over the full data context, off the visible chat
+    /// (the weekly report's takeaways). Same gates as `generateBrief`; nil on any failure.
+    func generate(instruction: String) async -> String? {
+        guard CoachBriefScheduler.coachMasterEnabled else { return nil }
+        guard isConfigured, dataConsent, let key = resolvedKey else { return nil }
+        let context = await buildFullContext()
+        let wire: [(role: ChatMessage.Role, content: String)] = [(.user, context + "\n\n---\n\n" + instruction)]
+        guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
+        let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
+    }
+
     /// Full data context = the metrics summary + recent workouts (+ an OPT-IN on-device-signals summary
     /// when the second consent is on). Used when the user has granted data access.
     /// Nathan's build: an extra, app-supplied summary (body composition, nutrition, lifting, sleep mat,

@@ -124,7 +124,11 @@ enum WCoachContext {
             }
         }
 
-        out.append("Training plan: lifts Tue/Thu/Sat (Workout A/B alternating). Goals: lower resting HR, raise HRV, lower body fat, raise lean mass. Calories are tracked in MacroFactor.")
+        let plan = WSleepPlan.make(data: data, repo: repo)
+        let g = WSleepPlan.goals[WSleepPlan.goalIndex]
+        out.append("Sleep planner tonight: needs \(WFmt.hm(plan.asleepNeed)) asleep (baseline \(WFmt.hm(plan.baseline)) + strain \(WFmt.hm(plan.strainAdd)) + debt repayment \(WFmt.hm(plan.debtRepay)) of \(WFmt.hm(plan.debt)) weighted 7-night debt); \(g.name) bedtime \(plan.bedtime(g.pct).formatted(date: .omitted, time: .shortened)) for a \(plan.wake.formatted(date: .omitted, time: .shortened)) wake.")
+
+        out.append("Training plan: either Workout A/B alternating Tue/Thu/Sat, or the 4-day V-taper plan (Upper A, Lower + delts, Upper B, Arms + delts) — the lift sessions above show which. Goals: the most muscle possible for a V-taper (side delts, chest, lats, arms, forearms) with a lean waist; also lower resting HR, raise HRV, lower body fat, raise lean mass. Calories are tracked in MacroFactor.")
         return out.joined(separator: "\n")
     }
 }
