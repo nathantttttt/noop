@@ -109,19 +109,7 @@ struct WLiftStats: View {
                             VStack(spacing: 3) {
                                 ForEach(0..<7, id: \.self) { d in
                                     let date = cal.date(byAdding: .day, value: w * 7 + d, to: first) ?? first
-                                    let v = dayVolume[Repository.localDayKey(date)]
-                                    let key = Repository.localDayKey(date)
-                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .fill(date < startDay ? Color.clear
-                                              : date > today ? Color.white.opacity(0.03)
-                                              : v == nil ? Color.white.opacity(0.08)
-                                              : W.mint.opacity(0.35 + 0.65 * min(1, (v ?? 0) / maxV)))
-                                        .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                            .stroke(cal.isDate(date, inSameDayAs: today) ? W.text.opacity(0.7) : .clear, lineWidth: 1))
-                                        .frame(height: 14)
-                                        .onLongPressGesture(minimumDuration: 0.4) {
-                                            if date >= startDay && date <= today { toggleUnlogged(key) }
-                                        }
+                                    dayCell(date, startDay: startDay, today: today, maxV: maxV)
                                 }
                             }
                         }
@@ -138,6 +126,27 @@ struct WLiftStats: View {
                 }
             }
         }
+    }
+
+    private func cellColor(_ date: Date, startDay: Date, today: Date, maxV: Double) -> Color {
+        if date < startDay { return Color.clear }
+        if date > today { return Color.white.opacity(0.03) }
+        guard let v = dayVolume[Repository.localDayKey(date)] else { return Color.white.opacity(0.08) }
+        let shade: Double = 0.35 + 0.65 * min(1, v / maxV)
+        return W.mint.opacity(shade)
+    }
+
+    private func dayCell(_ date: Date, startDay: Date, today: Date, maxV: Double) -> some View {
+        let isToday = Calendar.current.isDate(date, inSameDayAs: today)
+        let key = Repository.localDayKey(date)
+        let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
+        return shape
+            .fill(cellColor(date, startDay: startDay, today: today, maxV: maxV))
+            .overlay(shape.stroke(isToday ? W.text.opacity(0.7) : Color.clear, lineWidth: 1))
+            .frame(height: 14)
+            .onLongPressGesture(minimumDuration: 0.4) {
+                if date >= startDay && date <= today { toggleUnlogged(key) }
+            }
     }
 
     private func stat(_ v: String, _ label: String) -> some View {
