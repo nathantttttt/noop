@@ -195,6 +195,11 @@ struct NathanRestScreen: View {
                                     Text("\(engine.slots(forExercise: i).filter { !engine.isCompleted($0) }.count) sets left"
                                          + (session.shouldGoUp(exerciseIndex: i) ? " · go up in weight" : ""))
                                         .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
+                                    if let setup = LiftSetupStore.shared.note(for: engine.plan[i].exercise) {
+                                        Label(setup, systemImage: "wrench.adjustable")
+                                            .font(.system(size: 12)).foregroundStyle(NathanStyle.text2)
+                                            .lineLimit(1)
+                                    }
                                 }
                                 Spacer()
                                 Image(systemName: "play.fill").foregroundStyle(NathanStyle.accent)

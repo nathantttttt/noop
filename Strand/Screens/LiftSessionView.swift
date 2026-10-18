@@ -210,6 +210,7 @@ struct LiftSessionView: View {
                                                 secondaries: item.secondaryMuscles))
                         .font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
+                    LiftSetupChip(exercise: item.exercise)
                 }
                 if let note = item.note, !note.isEmpty {
                     Text(note)
