@@ -256,6 +256,7 @@ struct WWeeklyReportView: View {
     @State private var takeaways: String?
     @State private var thinking = false
     @State private var failed = false
+    @State private var failReason: String?
 
     private var cacheKey: String { "w.weekly.takeaways.\(Repository.localDayKey(WWeeklyReport.week(offset: offset).end))" }
 
@@ -344,6 +345,7 @@ struct WWeeklyReportView: View {
             UserDefaults.standard.set(reply, forKey: key)
         } else {
             failed = true
+            failReason = coach.lastGenerateError
         }
     }
 
@@ -363,7 +365,7 @@ struct WWeeklyReportView: View {
                         Text("Reading your week…").font(W.body(15)).foregroundStyle(W.text2)
                     }
                 } else {
-                    Text(failed ? "The Coach couldn't answer. Check the Coach key in More → Coach, then try again."
+                    Text(failed ? "The Coach couldn't answer: \(failReason ?? "unknown error"). Tap to try again."
                                 : "Ask the Coach what this week means for next week.")
                         .font(W.body(15)).foregroundStyle(W.text2).fixedSize(horizontal: false, vertical: true)
                 }

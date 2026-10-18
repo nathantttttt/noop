@@ -974,14 +974,26 @@ final class AICoachEngine: ObservableObject {
     /// Nathan's build: a one-off answer to `instruction` over the full data context, off the visible chat
     /// (the weekly report's takeaways). Same gates as `generateBrief`; nil on any failure.
     func generate(instruction: String) async -> String? {
-        guard CoachBriefScheduler.coachMasterEnabled else { return nil }
-        guard isConfigured, dataConsent, let key = resolvedKey else { return nil }
+        guard CoachBriefScheduler.coachMasterEnabled else { lastGenerateError = "The Coach is switched off in Settings."; return nil }
+        guard isConfigured, let key = resolvedKey else { lastGenerateError = "No Coach key is set up yet."; return nil }
+        guard dataConsent else { lastGenerateError = "Turn on \"Share my data with the Coach\" in the Coach settings."; return nil }
         let context = await buildFullContext()
         let wire: [(role: ChatMessage.Role, content: String)] = [(.user, context + "\n\n---\n\n" + instruction)]
-        guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
+        // Streamed and collected, the same path the chat uses.
+        var reply = ""
+        do {
+            try await streamProvider(key: key, messages: wire) { reply += $0 }
+        } catch {
+            lastGenerateError = (error as? AICoachError)?.errorDescription ?? error.localizedDescription
+            return nil
+        }
         let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        lastGenerateError = clean.isEmpty ? "The Coach sent back an empty reply." : nil
         return clean.isEmpty ? nil : clean
     }
+
+    /// Why the last `generate(instruction:)` returned nil, for the screen that asked.
+    var lastGenerateError: String?
 
     /// Full data context = the metrics summary + recent workouts (+ an OPT-IN on-device-signals summary
     /// when the second consent is on). Used when the user has granted data access.

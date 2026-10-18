@@ -59,7 +59,7 @@ struct StrandiOSApp: App {
             "noop.showDayCycleBackground": false,   // no sky scene behind screens
             "noop.skyBehindCards": false,
             "noop.liquidTodayEnabled": false,       // the plain card Today, not the "liquid" one
-            "noop.coachEnabled": false,             // AI Coach off until a key is added
+            "noop.coachEnabled": true,              // AI Coach on (it still needs a key to answer)
             "noop.liveSessionsBeta": false,         // removes the big "Start session" bar on Today
             "units.system": "imperial",             // lb, ft/in, °F
             "effort.scale": "whoop",                // strain on the 0–21 scale

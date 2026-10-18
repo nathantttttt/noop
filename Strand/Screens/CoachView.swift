@@ -164,7 +164,7 @@ struct CoachView: View {
                 coach.surfaceScheduledBrief(stored)
             }
             CoachBriefScheduler.activateIfEnabled { await coach.generateBrief() }
-            await coach.startBriefIfNeeded()
+            // Nathan's build: no automatic brief on opening; the Coach answers what is asked.
         }
         // #1862: a question handed over by the Today launcher sheet. Cleared BEFORE sending so a view
         // rebuild mid-flight cannot send it twice, and gated on `isConfigured` so an unconfigured handoff
@@ -189,9 +189,7 @@ struct CoachView: View {
         // A consent toggle AFTER the initial load re-checks the brief (the original `.task(id:)`
         // behaviour); the guard inside `startBriefIfNeeded` (messages.isEmpty) keeps this a no-op once
         // a conversation exists.
-        .onChangeCompat(of: coach.dataConsent) { _ in
-            Task { await coach.startBriefIfNeeded() }
-        }
+
     }
 
     // MARK: - Setup (no key yet)

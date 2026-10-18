@@ -20,6 +20,19 @@ struct WLiftStats: View {
     @State private var weekKg: Double = 0
     @State private var weekSets: [LiftMuscle: Double] = [:]
     @State private var loaded = false
+    /// Days marked by hand as trained but not logged (long-press a day on the map). Tue Oct 13 was one.
+    @AppStorage("w.lift.unloggedDays") private var unloggedCSV = "2026-10-13"
+    private var unlogged: Set<String> { Set(unloggedCSV.split(separator: ",").map(String.init)) }
+    @State private var loggedDays: Set<String> = []
+
+    private func toggleUnlogged(_ key: String) {
+        guard !loggedDays.contains(key) else { return }
+        var set = unlogged
+        if set.contains(key) { set.remove(key) } else { set.insert(key) }
+        unloggedCSV = set.sorted().joined(separator: ",")
+        WHaptics.tap()
+        Task { await load() }
+    }
 
     private var imperial: Bool { (UnitSystem(rawValue: unitRaw) ?? .imperial) == .imperial }
     private func mass(_ kg: Double) -> Double { imperial ? kg * 2.2046226218 : kg }
@@ -64,9 +77,9 @@ struct WLiftStats: View {
         return n
     }
 
-    /// The map starts the day Nathan restarted training (Thu Oct 15, 2026) and fills forward.
+    /// The map starts the day Nathan restarted training (Tue Oct 13, 2026) and fills forward.
     static let trackingStart: Date = {
-        var c = DateComponents(); c.year = 2026; c.month = 10; c.day = 15
+        var c = DateComponents(); c.year = 2026; c.month = 10; c.day = 13
         return Calendar.current.date(from: c) ?? Date()
     }()
 
@@ -97,6 +110,7 @@ struct WLiftStats: View {
                                 ForEach(0..<7, id: \.self) { d in
                                     let date = cal.date(byAdding: .day, value: w * 7 + d, to: first) ?? first
                                     let v = dayVolume[Repository.localDayKey(date)]
+                                    let key = Repository.localDayKey(date)
                                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                                         .fill(date < startDay ? Color.clear
                                               : date > today ? Color.white.opacity(0.03)
@@ -105,11 +119,16 @@ struct WLiftStats: View {
                                         .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
                                             .stroke(cal.isDate(date, inSameDayAs: today) ? W.text.opacity(0.7) : .clear, lineWidth: 1))
                                         .frame(height: 14)
+                                        .onLongPressGesture(minimumDuration: 0.4) {
+                                            if date >= startDay && date <= today { toggleUnlogged(key) }
+                                        }
                                 }
                             }
                         }
                     }
                 }
+                Text("Long-press a day to mark a workout you didn't log.")
+                    .font(W.body(12)).foregroundStyle(W.text3)
                 HStack(spacing: 0) {
                     stat("\(sessionsInWeek(weekStart))/\(sessionTarget)", "THIS WEEK")
                     Spacer()
@@ -224,6 +243,10 @@ struct WLiftStats: View {
             total += kg
             if s.startTs >= weekFrom { week += kg }
         }
+        let logged = Set(byDay.keys)
+        // Days marked by hand: drawn at the average logged day's shade.
+        let typical = byDay.isEmpty ? 1 : byDay.values.reduce(0, +) / Double(byDay.count)
+        for d in unlogged where byDay[d] == nil { byDay[d] = typical }
         // Strength sessions logged outside the Lift Log (imported or manual) still mark the day.
         for w in await repo.workoutRows(days: 7 * Self.weeks + 7) where w.sport == LiftSessionView.sport || w.sport.lowercased().contains("strength") {
             let day = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
@@ -232,6 +255,7 @@ struct WLiftStats: View {
         let counts = (try? await store.liftSetCounts(deviceId: repo.deviceId, fromTs: weekFrom, toTs: now).fractional) ?? [:]
         withAnimation(.easeOut(duration: 0.4)) {
             dayVolume = byDay
+            loggedDays = logged
             lifetimeKg = total
             lifetimeSets = sets
             sessionCount = sessions.count
