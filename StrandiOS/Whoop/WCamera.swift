@@ -11,6 +11,7 @@ import SwiftUI
 import AVFoundation
 import AudioToolbox
 import PhotosUI
+import Photos
 
 final class WCamera: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     let session = AVCaptureSession()
@@ -65,23 +66,56 @@ final class WCamera: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
         }
     }
 
+    /// The sensor's own pixels are landscape. Capture them untouched and set the orientation here, so
+    /// a portrait shot is upright every time (back camera: rotated right; front: rotated and mirrored,
+    /// the way the preview showed it), then bake that into the pixels.
     func shoot() {
         let front = position == .front
         queue.async {
             if let c = self.output.connection(with: .video) {
-                if c.isVideoRotationAngleSupported(90) { c.videoRotationAngle = 90 }
+                if c.isVideoRotationAngleSupported(0) { c.videoRotationAngle = 0 }
                 if c.isVideoMirroringSupported {
                     c.automaticallyAdjustsVideoMirroring = false
-                    c.isVideoMirrored = front       // a selfie comes out the way the preview showed it
+                    c.isVideoMirrored = false
                 }
             }
+            self.shotFront = front
             self.output.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
         }
     }
+    private var shotFront = false
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        guard let data = photo.fileDataRepresentation(), let img = UIImage(data: data) else { return }
+        guard let cg = photo.cgImageRepresentation() else { return }
+        let raw = UIImage(cgImage: cg, scale: 1, orientation: shotFront ? .leftMirrored : .right)
+        let img = raw.wUpright()
         DispatchQueue.main.async { self.captured = img }
+    }
+}
+
+extension UIImage {
+    /// The same picture with its orientation drawn into the pixels (orientation .up), so it shows
+    /// upright everywhere, whatever reads it.
+    func wUpright() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Turned a quarter turn clockwise.
+    func wRotatedRight() -> UIImage {
+        let up = wUpright()
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let out = CGSize(width: up.size.height, height: up.size.width)
+        return UIGraphicsImageRenderer(size: out, format: format).image { ctx in
+            ctx.cgContext.translateBy(x: out.width, y: 0)
+            ctx.cgContext.rotate(by: .pi / 2)
+            up.draw(in: CGRect(origin: .zero, size: up.size))
+        }
     }
 }
 
@@ -150,14 +184,19 @@ struct WCameraView: View {
                         .font(W.body(15)).foregroundStyle(W.text2).multilineTextAlignment(.center).padding(.horizontal, 30)
                 }
             } else {
-                WCameraPreview(session: cam.session).ignoresSafeArea()
-                if showGhost, let ghost {
-                    Image(uiImage: ghost).resizable().scaledToFill()
-                        .scaleEffect(x: cam.position == .front ? -1 : 1, y: 1)
-                        .opacity(0.3)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
+                // The viewfinder is the photo's own 3:4 frame, so what you see is exactly what is kept,
+                // and the ghost (also 3:4) sits on it whole, upright and uncropped.
+                ZStack {
+                    WCameraPreview(session: cam.session)
+                    if showGhost, let ghost {
+                        Image(uiImage: ghost).resizable().scaledToFit()
+                            .opacity(0.32)
+                            .allowsHitTesting(false)
+                    }
                 }
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .clipped()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             if let n = countdown {
                 Text("\(n)")
@@ -305,5 +344,86 @@ struct WCameraView: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 18)
         }
+    }
+}
+
+// MARK: - Copy to the Photos library, hidden
+
+/// Puts each progress photo into the iPhone's Photos library as a HIDDEN photo (it shows only in the
+/// Face ID–locked Hidden album, never in Recents), and also in a "NOOP Progress" album when allowed.
+/// A safety copy outside the app: deleting or reinstalling NOOP wipes the app's own folder.
+enum WPhotoVault {
+    static let enabledKey = "w.photos.saveHidden"
+    private static let savedKey = "w.photos.savedFiles"
+    private static let albumName = "NOOP Progress"
+
+    static var enabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
+
+    static func alreadySaved(_ url: URL) -> Bool {
+        (UserDefaults.standard.stringArray(forKey: savedKey) ?? []).contains(url.lastPathComponent)
+    }
+
+    private static func markSaved(_ url: URL) {
+        var list = UserDefaults.standard.stringArray(forKey: savedKey) ?? []
+        if !list.contains(url.lastPathComponent) { list.append(url.lastPathComponent) }
+        UserDefaults.standard.set(list, forKey: savedKey)
+    }
+
+    /// Asks for access the first time. Returns whether saving is possible.
+    static func authorize() async -> Bool {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        switch status {
+        case .authorized, .limited: return true
+        case .notDetermined:
+            let s = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            return s == .authorized || s == .limited
+        default: return false
+        }
+    }
+
+    /// Saves the JPEG at `url` hidden. Returns false if Photos access is off or the save failed.
+    @discardableResult
+    static func save(_ url: URL) async -> Bool {
+        guard !alreadySaved(url), await authorize() else { return alreadySaved(url) }
+        let album = await findOrCreateAlbum()
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                let req = PHAssetCreationRequest.forAsset()
+                req.addResource(with: .photo, fileURL: url, options: nil)
+                req.isHidden = true
+                if let album, let placeholder = req.placeholderForCreatedAsset,
+                   let change = PHAssetCollectionChangeRequest(for: album) {
+                    change.addAssets([placeholder] as NSArray)
+                }
+            }
+            markSaved(url)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Copies every progress photo not yet in Photos. Returns how many were added.
+    static func saveAll(_ urls: [URL]) async -> Int {
+        var n = 0
+        for u in urls where !alreadySaved(u) {
+            if await save(u) { n += 1 }
+        }
+        return n
+    }
+
+    private static func findOrCreateAlbum() async -> PHAssetCollection? {
+        let opts = PHFetchOptions()
+        opts.predicate = NSPredicate(format: "title = %@", albumName)
+        if let found = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: opts).firstObject {
+            return found
+        }
+        var id: String?
+        try? await PHPhotoLibrary.shared().performChanges {
+            id = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: albumName)
+                .placeholderForCreatedAssetCollection.localIdentifier
+        }
+        guard let id else { return nil }
+        return PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject
     }
 }

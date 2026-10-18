@@ -272,6 +272,9 @@ struct NathanProgressPhotos: View {
     @State private var picked: PhotosPickerItem?
     @State private var comparing: Photo?
     @State private var showCamera = false
+    @State private var vaultNote: String?
+    @State private var thumbVersion = 0
+    @AppStorage(WPhotoVault.enabledKey) private var saveToPhotos = true
 
     static var folder: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -313,13 +316,44 @@ struct NathanProgressPhotos: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .id("\(p.id)-\(thumbVersion)")
                         .contextMenu {
+                            Button { rotate(p) } label: { Label("Rotate right", systemImage: "rotate.right") }
                             Button(role: .destructive) { delete(p) } label: { Label("Delete photo", systemImage: "trash") }
                         }
                     }
                 }
             }
-            Text("Photos stay on this phone, inside NOOP. Long-press a photo to delete it.")
+            Toggle(isOn: $saveToPhotos) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Also save to Photos, hidden").font(.system(size: 14, weight: .semibold)).foregroundStyle(NathanStyle.text)
+                    Text("A backup copy in the Face ID–locked Hidden album and a \"NOOP Progress\" album.")
+                        .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
+                }
+            }
+            .tint(NathanStyle.accent)
+            .onChange(of: saveToPhotos) { _, on in
+                guard on else { return }
+                Task {
+                    let n = await WPhotoVault.saveAll(photos.map(\.url))
+                    vaultNote = n > 0 ? "Copied \(n) photo\(n == 1 ? "" : "s") to Photos → Hidden" : nil
+                }
+            }
+            if saveToPhotos, photos.contains(where: { !WPhotoVault.alreadySaved($0.url) }) {
+                Button {
+                    Task {
+                        let n = await WPhotoVault.saveAll(photos.map(\.url))
+                        vaultNote = n > 0 ? "Copied \(n) photo\(n == 1 ? "" : "s") to Photos → Hidden"
+                                          : "Couldn't save to Photos. Allow Photos access in Settings → NOOP."
+                    }
+                } label: {
+                    Text("Back up existing photos to Photos").font(.system(size: 13, weight: .semibold)).foregroundStyle(NathanStyle.accent)
+                }
+            }
+            if let vaultNote {
+                Text(vaultNote).font(.system(size: 12)).foregroundStyle(NathanStyle.text2)
+            }
+            Text("Photos stay on this phone. Long-press a photo to rotate or delete it.")
                 .font(.system(size: 12)).foregroundStyle(NathanStyle.text3)
         }
         .task { reload() }
@@ -368,12 +402,29 @@ struct NathanProgressPhotos: View {
     }
 
     private func store(_ img: UIImage) {
-        guard let jpg = img.jpegData(compressionQuality: 0.85) else { return }
+        guard let jpg = img.wUpright().jpegData(compressionQuality: 0.85) else { return }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd_HHmmss"
         let url = Self.folder.appendingPathComponent("front_\(f.string(from: Date())).jpg")
         try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
         try? jpg.write(to: url, options: .atomic)
         reload()
+        if WPhotoVault.enabled {
+            Task {
+                let ok = await WPhotoVault.save(url)
+                vaultNote = ok ? "Saved to Photos → Hidden" : "Couldn't save to Photos. Allow Photos access in Settings → NOOP."
+            }
+        }
+    }
+
+    /// A quarter turn clockwise, written back over the file (keeps its date).
+    private func rotate(_ p: Photo) {
+        guard let img = UIImage(contentsOfFile: p.url.path),
+              let jpg = img.wRotatedRight().jpegData(compressionQuality: 0.9) else { return }
+        let created = (try? p.url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? p.date
+        try? jpg.write(to: p.url, options: .atomic)
+        try? FileManager.default.setAttributes([.creationDate: created], ofItemAtPath: p.url.path)
+        reload()
+        thumbVersion += 1
     }
 
     private func delete(_ p: Photo) {
