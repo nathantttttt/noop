@@ -26,6 +26,8 @@ public struct ImportedProgramLine: Sendable, Equatable {
     public var secondaryMuscles: [LiftMuscle]
     public var targetSets: Int?
     public var targetReps: Int?
+    /// Top of the rep range ("Max reps" column, or a "6-10" reps cell), when the sheet gives one.
+    public var targetRepsHigh: Int?
     public var targetWeightKg: Double?
     /// The line's max RPE, 1-10: a ceiling to stay under, stored as `liftProgramItem.targetRpe`.
     public var targetMaxRpe: Double?
@@ -34,8 +36,9 @@ public struct ImportedProgramLine: Sendable, Equatable {
 
     public init(exercise: String, primaryMuscle: LiftMuscle?, secondaryMuscles: [LiftMuscle],
                 targetSets: Int?, targetReps: Int?, targetWeightKg: Double?, targetMaxRpe: Double?,
-                restSec: Int?, note: String?) {
+                restSec: Int?, note: String?, targetRepsHigh: Int? = nil) {
         self.exercise = exercise
+        self.targetRepsHigh = targetRepsHigh
         self.primaryMuscle = primaryMuscle
         self.secondaryMuscles = secondaryMuscles
         self.targetSets = targetSets
@@ -121,7 +124,8 @@ public enum LiftProgramSheetImporter {
     private static let primaryKeys = ["primary_muscle", "primary", "muscle"]
     private static let secondaryKeys = ["secondary_muscles", "secondary_muscle", "secondary"]
     private static let setsKeys = ["sets", "working_sets", "target_sets"]
-    private static let repsKeys = ["reps", "rep", "target_reps", "repetitions"]
+    private static let repsKeys = ["reps", "rep", "target_reps", "repetitions", "min_reps"]
+    private static let maxRepsKeys = ["max_reps", "reps_max", "top_reps", "target_reps_high", "rep_max_target"]
     private static let weightKeys = ["weight_kg", "weight", "kg", "load", "load_kg"]
     private static let restKeys = ["rest_sec", "rest_seconds", "rest", "rest_s"]
     private static let noteKeys = ["note", "technique_note", "notes", "cue"]
@@ -213,17 +217,31 @@ public enum LiftProgramSheetImporter {
             // Notes are capped to the same lengths the in-app editors enforce. A spreadsheet cell
             // holds far more than a phone can show, and a note that arrives longer than the editor
             // would ever let you type is a note you can never fully see or edit afterwards.
+            // A rep RANGE: "6-10" / "6–10" in the reps cell, or a separate "Max reps" column.
+            var repsLow = intValue(row, repsKeys)
+            var repsHigh = intValue(row, maxRepsKeys)
+            if let raw = value(row, repsKeys) {
+                let parts = raw.split(whereSeparator: { $0 == "-" || $0 == "–" || $0 == "—" })
+                    .map { String($0).trimmed }
+                if parts.count == 2, let lo = Int(parts[0]), let hi = Int(parts[1]), hi > lo {
+                    repsLow = lo
+                    if repsHigh == nil { repsHigh = hi }
+                }
+            }
+            if let lo = repsLow, let hi = repsHigh, hi <= lo { repsHigh = nil }
+
             let line = ImportedProgramLine(
                 exercise: exercise,
                 primaryMuscle: primary,
                 secondaryMuscles: secondary,
                 targetSets: intValue(row, setsKeys),
-                targetReps: intValue(row, repsKeys),
+                targetReps: repsLow,
                 targetWeightKg: doubleValue(row, weightKeys),
                 targetMaxRpe: maxRpe,
                 restSec: intValue(row, restKeys),
                 note: value(row, noteKeys)?.trimmed.nilIfEmpty
-                    .map { String($0.prefix(WhoopStore.maxExerciseNoteLength)) })
+                    .map { String($0.prefix(WhoopStore.maxExerciseNoteLength)) },
+                targetRepsHigh: repsHigh)
 
             if let idx = indexByName[programName.lowercased()] {
                 guard programs[idx].lines.count < maxLinesPerProgram else { truncated = true; continue }

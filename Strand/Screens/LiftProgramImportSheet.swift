@@ -170,7 +170,9 @@ struct LiftProgramImportSheet: View {
     /// "3 x 10 · 50 kg · RPE ≤8 · 90s", skipping whatever the sheet left blank.
     private func summary(_ line: ImportedProgramLine) -> String {
         var parts: [String] = []
-        if let sets = line.targetSets, let reps = line.targetReps { parts.append("\(sets) x \(reps)") }
+        if let sets = line.targetSets, let reps = line.targetReps {
+            parts.append("\(sets) x \(reps)" + (line.targetRepsHigh.map { "–\($0)" } ?? ""))
+        }
         else if let sets = line.targetSets { parts.append("\(sets) x") }
         if let kg = line.targetWeightKg { parts.append(LiftFormat.trim(kg) + " kg") }
         if let rpe = line.targetMaxRpe { parts.append("RPE ≤" + LiftFormat.trim(rpe)) }
@@ -244,7 +246,7 @@ struct LiftProgramImportSheet: View {
                     targetSets: line.targetSets,
                     // The sheet plans ONE rep count, which is what the editor plans too; the range's
                     // high end stays nil rather than inventing a spread nobody typed.
-                    targetRepsLow: line.targetReps, targetRepsHigh: nil, targetRpe: line.targetMaxRpe,
+                    targetRepsLow: line.targetReps, targetRepsHigh: line.targetRepsHigh, targetRpe: line.targetMaxRpe,
                     // Nathan's build: an exercise already in the Lift Log starts at the weight last
                     // lifted for it, so a new program picks up where the old one left off.
                     targetWeightKg: logged[Self.key(line.exercise)] ?? line.targetWeightKg,
